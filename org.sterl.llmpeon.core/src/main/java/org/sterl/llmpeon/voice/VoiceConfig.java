@@ -12,6 +12,13 @@ public record VoiceConfig(
     String language,    // e.g. "en", "de" — empty = auto-detect
     String mixer        // mixer/device name — empty = system default
 ) {
+    public static VoiceConfig DEFAULT = new VoiceConfig(
+            false,
+            "whisper-large-v3-turbo-gguf",
+            "/v1/audio/transcriptions",
+            "http://localhost:1234",
+            null, "de",
+            "Mikrofon (Logitech StreamCam)");
     /**
      * Returns a new VoiceConfig with baseUrl and apiKey filled from llm where blank.
      * Call this in PeonAiService before passing the config to VoiceInputService.
@@ -20,5 +27,9 @@ public record VoiceConfig(
         String url = StringUtil.hasValue(baseUrl) ? baseUrl : llm.getUrl();
         String key = StringUtil.hasValue(apiKey)  ? apiKey  : llm.getApiKey();
         return new VoiceConfig(enabled, model, endpoint, url, key, language, mixer);
+    }
+    
+    public String buildUrl() {
+        return baseUrl() + endpoint();
     }
 }

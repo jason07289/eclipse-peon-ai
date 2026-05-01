@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.Test;
 import org.sterl.llmpeon.ai.LlmConfig;
-import org.sterl.llmpeon.voice.VoiceConfig;
 
 class VoiceConfigTest {
 
@@ -18,13 +17,15 @@ class VoiceConfigTest {
     @Test
     void shouldUseVoiceUrlWhenSet() {
         // GIVEN a voice config with an explicit base URL
-        var voice = voice("https://api.mistral.ai", "");
+        var voice = new VoiceConfig(true, "voxtral-mini-latest", "/v1/audio/transcriptions", "https://api.mistral.ai", "foo", "de", null);
 
         // WHEN resolved against the LLM config
         var resolved = voice.resolve(LLM);
 
         // THEN the voice URL is used
         assertEquals("https://api.mistral.ai", resolved.baseUrl());
+        assertEquals("https://api.mistral.ai/v1/audio/transcriptions", resolved.buildUrl());
+        assertEquals("voxtral-mini-latest", resolved.model());
     }
 
     @Test
@@ -37,6 +38,7 @@ class VoiceConfigTest {
 
         // THEN the LLM URL is used
         assertEquals("https://api.openai.com", resolved.baseUrl());
+        assertEquals("https://api.openai.com/v1/audio/transcriptions", resolved.buildUrl());
     }
 
     @Test

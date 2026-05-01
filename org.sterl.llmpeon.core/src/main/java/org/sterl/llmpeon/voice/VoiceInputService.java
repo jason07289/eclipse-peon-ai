@@ -1,12 +1,16 @@
 package org.sterl.llmpeon.voice;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -19,6 +23,8 @@ import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.Mixer;
 import javax.sound.sampled.TargetDataLine;
 
+import org.sterl.llmpeon.shared.FileUtils;
+
 public class VoiceInputService implements AutoCloseable {
 
     private static final java.util.logging.Logger LOG =
@@ -29,7 +35,10 @@ public class VoiceInputService implements AutoCloseable {
     // 15 seconds of 16 kHz, 16-bit, mono — flush and dispatch when reached
     private static final int MAX_BUFFER_BYTES = 16_000 * 2 * 15;
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    // HTTP/1.1 required: local servers (LM Studio / llama.cpp) mishandle HTTP/2 multipart uploads
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .build();
     private final List<CompletableFuture<String>> pendingChunks = new CopyOnWriteArrayList<>();
 
     private TargetDataLine line;
@@ -130,14 +139,22 @@ public class VoiceInputService implements AutoCloseable {
         byte[] wav = toWav(pcm);
         VoiceConfig cfg = this.voiceConfig;
         pendingChunks.add(CompletableFuture.supplyAsync(() -> {
-            try { return transcribe(wav, cfg); }
-            catch (Exception e) { throw new RuntimeException(e); }
+            try { 
+                Path.of("./record.wav").toFile().createNewFile();
+                Files.write(Path.of("./record.wav"), wav, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+                System.err.println(Path.of("./record.wav").toAbsolutePath());
+                return transcribe(wav, cfg); 
+            }
+            catch (Exception e) {
+                if (e instanceof RuntimeException ex) throw ex;
+                throw new RuntimeException(e); 
+            }
         }));
     }
 
-    private String transcribe(byte[] wav, VoiceConfig voice) throws Exception {
+    String transcribe(byte[] wav, VoiceConfig voice) throws Exception {
         String boundary = UUID.randomUUID().toString().replace("-", "");
-        String url = voice.baseUrl() + voice.endpoint();
+        String url = voice.buildUrl();
 
         byte[] body = buildMultipartBody(boundary, wav, voice);
 
@@ -156,7 +173,8 @@ public class VoiceInputService implements AutoCloseable {
                 .send(req.build(), HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new RuntimeException("Transcription request failed (" + response.statusCode() + "): " + response.body());
+            throw new RuntimeException("Transcription request failed (" + response.statusCode() + "): " + url
+                    + " " + response.body());
         }
 
         return parseText(response.body());
@@ -201,14 +219,14 @@ public class VoiceInputService implements AutoCloseable {
         return out.toByteArray();
     }
 
-    /** Minimal JSON extraction of {"text":"..."} without adding a JSON dependency. */
-    private String parseText(String json) {
-        int idx = json.indexOf("\"text\"");
-        if (idx < 0) throw new RuntimeException("Unexpected transcription response: " + json);
-        int colon = json.indexOf(':', idx);
-        int start = json.indexOf('"', colon + 1) + 1;
-        int end   = json.indexOf('"', start);
-        return json.substring(start, end);
+    /** Extracts transcription text from either {"text":"..."} JSON or a plain-text body. */
+    private String parseText(String body) {
+        int idx = body.indexOf("\"text\"");
+        if (idx < 0) return body.strip();
+        int colon = body.indexOf(':', idx);
+        int start = body.indexOf('"', colon + 1) + 1;
+        int end   = body.indexOf('"', start);
+        return body.substring(start, end);
     }
 
     /** Returns true if all PCM bytes are zero — indicates denied mic permission on macOS. */

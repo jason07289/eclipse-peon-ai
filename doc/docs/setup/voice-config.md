@@ -49,15 +49,6 @@ Mistral exposes a Whisper-compatible transcription [endpoint](https://docs.mistr
 
 ![Voice Input URL field](../assets/voice-config-url.png)
 
-### LM Studio (local)
-
-Load a Whisper model in LM Studio and point voice input at your local server.
-
-| Field | Value |
-|---|---|
-| STT Model | `whisper` |
-| Base URL | `http://localhost:1234` |
-
 ### Ollama (local)
 
 Ollama [doesn't support the whisper](https://github.com/ollama/ollama/issues/15515#issuecomment-4231546940) models - gemma4 works.
