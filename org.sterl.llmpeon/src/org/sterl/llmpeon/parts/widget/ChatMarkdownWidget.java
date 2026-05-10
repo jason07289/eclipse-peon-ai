@@ -39,6 +39,10 @@ public class ChatMarkdownWidget extends Composite {
         clear();
     }
     
+    public void hideLiveStatus() {
+        browser.execute("hideLiveStatus();");
+    }
+
     private String loadChatHtml() {
         if (chatHtml != null) return chatHtml;
         try (InputStream is = getClass().getResourceAsStream("/resources/chat/chat.html")) {
@@ -90,15 +94,12 @@ public class ChatMarkdownWidget extends Composite {
         };
         String thinkChunk = r.type() == OnPartialAiResponse.Type.THINK
                 ? thinkingBuffer.append(r.value()) : null;
-        updateLiveResponse(state, tokPerSec, thinkChunk);
-    }
 
-    private void updateLiveResponse(String stateMessage, double tokPerSec, String thinkChunk) {
-        String safeState = stateMessage == null ? "" : stateMessage.replace("'", "\\'");
+        String safeState = state == null ? "" : state.replace("'", "\\'");
         String safeChunk = thinkChunk == null ? "" : thinkChunk.replace("'", "\\'").replace("\n", "<br>");
         browser.execute("updateLiveResponse('" + safeState + "', " + tokPerSec + ", '" + safeChunk + "');");
     }
-    
+
     public void showDiff(String unifiedDiff) {
         try {
             browser.execute(
