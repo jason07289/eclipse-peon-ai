@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<?artifactRepository version='1.1.0'?>
+<artifacts size='1'>
+  <artifact classifier='osgi.bundle' id='org.sterl.llmpeon' version='1.6.2'>
+    <properties size='8'>
+      <property name='artifact.size' value='10989097'/>
+      <property name='download.size' value='10989097'/>
+      <property name='download.checksum.sha-512' value='fa86d29a21ed5ce6276425d4ab45d5173cb8285cbf7979ef88690f4161725208b5688cda2aac8c595e314a5109416fe575bb3658508ea8c8063808bd52becd12'/>
+      <property name='download.checksum.sha-256' value='3add864cf5ee6f79c6e9aa7b7c10c1254bb563d06d548d9913d77e3f616307d8'/>
+      <property name='maven-groupId' value='org.sterl'/>
+      <property name='maven-artifactId' value='org.sterl.llmpeon'/>
+      <property name='maven-version' value='1.6.2'/>
+      <property name='maven-type' value='eclipse-plugin'/>
+    </properties>
+  </artifact>
+</artifacts>
