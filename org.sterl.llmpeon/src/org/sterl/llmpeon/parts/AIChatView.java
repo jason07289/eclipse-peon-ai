@@ -362,12 +362,27 @@ public class AIChatView implements EclipseAiMonitor {
         chatInput.setVoiceInputVisible(VoicePreferenceInitializer.buildWithDefaults().enabled());
         refreshStatusLine();
         reloadModelsIfNeeded(); // TODO this is miss leading - we do the same here again
-        
+        applyShellCommandConfirmation();
+
         var prefs = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
         debugLog.set(prefs.getBoolean(PeonConstants.PREF_LOG_RESPONSE, false));
+    }
+
+    private void applyMcpConfig() {
+        var servers = McpPreferenceInitializer.loadServers();
+        statusLine.setMcpAvailable(!servers.isEmpty());
+        statusLine.setMcpEnabled(!servers.isEmpty() && McpPreferenceInitializer.isMcpEnabled());
+        aiService.applyMcpConfig();
+    }
+
+    private void applyShellCommandConfirmation() {
+        var prefs = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
+        var autonomous = aiService.getAgentMode().getAutonomous();
 
         // TODO move into own class?
-        if (prefs.getBoolean(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, false)) {
+        if ("true".equalsIgnoreCase(prefs.get(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, "")) ||
+                "always".equalsIgnoreCase(prefs.get(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, "")) ||
+                (!autonomous && "not-autonomous".equalsIgnoreCase(prefs.get(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, "")))) {
             aiService.getToolService().getTool(ShellTool.class).ifPresent(shellTool -> {
                 shellTool.setConfirmationProvider((command, workingDirectory) -> {
                     var latch = new java.util.concurrent.CountDownLatch(1);
@@ -393,13 +408,6 @@ public class AIChatView implements EclipseAiMonitor {
                 shellTool.setConfirmationProvider(null);
             });
         }
-    }
-
-    private void applyMcpConfig() {
-        var servers = McpPreferenceInitializer.loadServers();
-        statusLine.setMcpAvailable(!servers.isEmpty());
-        statusLine.setMcpEnabled(!servers.isEmpty() && McpPreferenceInitializer.isMcpEnabled());
-        aiService.applyMcpConfig();
     }
 
     private void reloadModelsIfNeeded() {
@@ -473,6 +481,7 @@ public class AIChatView implements EclipseAiMonitor {
         }
         currentMode = mode;
         refreshChat();
+        applyShellCommandConfirmation();
     }
 
     // TODO 29.03.2026 

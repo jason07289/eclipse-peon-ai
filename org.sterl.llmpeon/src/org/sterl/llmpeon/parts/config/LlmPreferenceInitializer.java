@@ -33,7 +33,7 @@ public class LlmPreferenceInitializer extends AbstractPreferenceInitializer {
         defaults.put(PeonConstants.PREF_API_KEY, StringUtil.stripToEmpty(DEFAULT.getApiKey()));
         defaults.put(PeonConstants.PREF_SKILL_DIRECTORY, StringUtil.stripToEmpty(DEFAULT.getSkillDirectory()));
         defaults.putBoolean(PeonConstants.PREF_DISK_TOOLS_ENABLED, false);
-        defaults.putBoolean(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, false);
+        defaults.put(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, "");
     }
     
     public static LlmConfig buildWithDefaults() {
@@ -57,6 +57,7 @@ public class LlmPreferenceInitializer extends AbstractPreferenceInitializer {
             .url(prefs.get(PeonConstants.PREF_URL, DEFAULT.getUrl()))
             .tokenWindow(prefs.getInt(PeonConstants.PREF_TOKEN_WINDOW, DEFAULT.getTokenWindow()))
             .thinkingEnabled(prefs.getBoolean(PeonConstants.PREF_THINKING_ENABLED, DEFAULT.isThinkingEnabled()))
+            .sendThinkingEnabled(prefs.getBoolean(PeonConstants.PREF_SEND_THINKING_ENABLED, DEFAULT.isSendThinkingEnabled()))
             .apiKey(prefs.get(PeonConstants.PREF_API_KEY, ""))
             .skillDirectory(skillDir)
             .diskToolsEnabled(prefs.getBoolean(PeonConstants.PREF_DISK_TOOLS_ENABLED, false))
