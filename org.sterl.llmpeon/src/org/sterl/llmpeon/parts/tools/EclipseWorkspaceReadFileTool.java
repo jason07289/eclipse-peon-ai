@@ -56,11 +56,13 @@ public class EclipseWorkspaceReadFileTool extends AbstractEclipseTool {
 
     @Tool("Eclipse: Search workspace files by name. Use '*' to list all files recursively.")
     public String searchWorkspaceFiles(
-            @P(description = "file name query - wildcard *, ? is supported. e.g. '*.java' for all java files", name = "query") String query,
-            @P(description = "max results to return. 0 = unlimited.", required = false, name = "limit") Integer inLimit) {
+            @P(description = "file name query - wildcard *, ? is supported. e.g. '*.java' for all java files", name = "query") 
+            String query,
+            @P(description = "max results to return. 0 = unlimited.", required = false, name = "limit") 
+            Integer inLimit) {
 
-        final int limit = inLimit == null ? 0 : inLimit;
         ArgsUtil.requireNonBlank(query, "query");
+        final int limit = inLimit == null ? 0 : inLimit;
 
         query = FileUtils.normalizePath(query);
         final var matcher = StringMatcher.wildCardMatcher(query);
@@ -101,7 +103,8 @@ public class EclipseWorkspaceReadFileTool extends AbstractEclipseTool {
     public static final String LIST_WORKSPACE_NAME = "listWorkspace";
     @Tool(name = LIST_WORKSPACE_NAME, value = "Eclipse: List workspace directory/projects (non-recursive). Empty path lists all projects.")
     public String listWorkspac(
-            @P(description = "workspace-relative path, e.g. '/MyProject/src'", required = false, name = "path") String path) {
+            @P(description = "workspace-relative path, e.g. '/MyProject/src'", required = false, name = "path") 
+            String path) {
 
         // root: list open projects
         if (path == null || path.isBlank() || path.length() == 1) {

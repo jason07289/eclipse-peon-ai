@@ -59,8 +59,8 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
             @P(name = "newString") String newString) {
 
         ArgsUtil.requireNonBlank(filePath, "filePath");
-        ArgsUtil.requireNonBlank(filePath, "oldString");
-        ArgsUtil.requireNonBlank(filePath, "newString");
+        ArgsUtil.requireNonBlank(oldString, "oldString");
+        ArgsUtil.requireNonNull(newString, "newString");
 
         var inFile = EclipseUtil.resolveInEclipse(filePath);
         if (inFile.isEmpty() || !(inFile.get() instanceof IFile eclipseFile)) {
@@ -79,11 +79,13 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
 
     @Tool("Eclipse: Overwrite existing workspace file.")
     public String writeWorkspaceFile(
-            @P(description = "workspace-relative path", name = "filePath") String filePath,
-            @P(name = "newContent") String newContent) {
+            @P(description = "workspace-relative path", name = "filePath") 
+            String filePath,
+            @P(name = "newContent") 
+            String newContent) {
 
         ArgsUtil.requireNonBlank(filePath, "filePath");
-        ArgsUtil.requireNonBlank(filePath, "newContent");
+        ArgsUtil.requireNonBlank(newContent, "newContent");
 
         var inFile = EclipseUtil.resolveInEclipse(filePath);
         if (inFile.isEmpty() || !(inFile.get() instanceof IFile)) {
@@ -108,8 +110,10 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
 
     @Tool("Eclipse: Create/overwrite workspace file. Creates parent dirs.")
     public String createWorkspaceFile(
-            @P(description = "workspace-relative path", name = "filePath") String filePath,
-            @P(name = "content") String content) {
+            @P(description = "workspace-relative path", name = "filePath") 
+            String filePath,
+            @P(name = "content") 
+            String content) {
 
         ArgsUtil.requireNonBlank(filePath, "filePath");
         ArgsUtil.requireNonBlank(filePath, "content");

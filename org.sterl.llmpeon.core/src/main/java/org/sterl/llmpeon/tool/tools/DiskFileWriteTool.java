@@ -113,7 +113,7 @@ public class DiskFileWriteTool extends AbstractTool {
 
         ArgsUtil.requireNonBlank(filePath, "filePath");
         ArgsUtil.requireNonNull(line, "line");
-        ArgsUtil.requireNonBlank(newContent, "newContent");
+        ArgsUtil.requireNonNull(newContent, "newContent");
 
         Path resolved = resolve(filePath);
         if (resolved == null || !Files.isRegularFile(resolved)) {
@@ -137,7 +137,7 @@ public class DiskFileWriteTool extends AbstractTool {
 
         ArgsUtil.requireNonBlank(filePath, "filePath");
         ArgsUtil.requireNonBlank(oldString, "oldString");
-        ArgsUtil.requireNonBlank(newString, "newString");
+        ArgsUtil.requireNonNull(newString, "newString");
 
         if (oldString.equals(newString)) {
             throw new IllegalArgumentException("oldString and newString are identical - nothing to change");
