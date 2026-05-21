@@ -12,8 +12,6 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.egit.core.project.RepositoryMapping;
-import org.eclipse.jgit.lib.Repository;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.ui.IEditorInput;
 import org.eclipse.ui.IEditorPart;
@@ -41,18 +39,6 @@ public class EclipseUtil {
             throw new IllegalStateException("Workspace root has no filesystem location");
         }
         return loc.toFile().toPath();
-    }
-    
-    public static Optional<Repository> findGitRepositoryFor(IProject project) {
-        if (project == null) return Optional.empty();
-
-        var mapping = RepositoryMapping.getMapping((IResource) project);
-        if (mapping == null) {
-            return Optional.empty();
-        }
-
-        var repo = mapping.getRepository();
-        return Optional.ofNullable(repo);
     }
 
     /**

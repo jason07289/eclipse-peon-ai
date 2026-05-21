@@ -40,7 +40,7 @@ public class LlmConfig {
     @Default
     private final double planTemperature = 0.8;
     @Default
-    private final double devTemperature = 0.4;
+    private final double devTemperature = 0.3;
     @Default
     private final boolean thinkingEnabled = true;
     @Default
