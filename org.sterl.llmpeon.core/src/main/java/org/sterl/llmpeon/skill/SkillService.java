@@ -19,7 +19,7 @@ import dev.langchain4j.data.message.SystemMessage;
 public class SkillService {
 
     private Path skillsDirectory;
-    private final List<SkillRecord> skills = new LinkedList<>();
+    private final List<Skill> skills = new LinkedList<>();
     private boolean enabled = true;
 
     public SkillService() {
@@ -47,14 +47,32 @@ public class SkillService {
         return enabled;
     }
 
+    /** Set enabled state for a specific skill by name. */
+    public void setSkillEnabled(String skillName, boolean enabled) {
+        skills.stream()
+            .filter(s -> s.name().equalsIgnoreCase(skillName))
+            .findFirst()
+            .ifPresent(s -> s.setEnabled(enabled));
+    }
+
+    /** Enable/disable all skills at once. */
+    public void setAllSkillsEnabled(boolean enabled) {
+        skills.forEach(s -> s.setEnabled(enabled));
+    }
+
     /** Total number of loaded skills regardless of enabled state. */
     public int loadedSkillCount() {
         return skills.size();
     }
 
     /** Returns loaded skills when enabled, empty list when disabled. */
-    public List<SkillRecord> getSkills() {
-        return enabled ? skills : List.of();
+    public List<Skill> getSkills() {
+        return enabled ? skills.stream().filter(Skill::isEnabled).toList() : List.of();
+    }
+
+    /** Returns all loaded skills regardless of global enabled state. */
+    public List<Skill> getAllLoadedSkills() {
+        return new LinkedList<>(skills);
     }
     
     public boolean refresh(String newPath) throws IOException {
@@ -76,7 +94,7 @@ public class SkillService {
                 for (Path dir : dirs) {
                     var skillFile = detectSkillFile(dir);
                     if (Files.isRegularFile(skillFile)) {
-                        SkillRecord skill = parseSkillFile(skillFile);
+                        Skill skill = parseSkillFile(skillFile);
                         if (skill != null) {
                             skills.add(skill);
                         }
@@ -95,7 +113,7 @@ public class SkillService {
         return skillFile;
     }
 
-    static SkillRecord parseSkillFile(Path skillFile) throws IOException {
+    static Skill parseSkillFile(Path skillFile) throws IOException {
         String name = null;
         String description = null;
         boolean inFrontmatter = false;
@@ -126,7 +144,7 @@ public class SkillService {
         }
 
         if (name != null && description != null) {
-            return new SkillRecord(name, description, skillFile);
+            return new Skill(name, description, skillFile);
         }
         return null;
     }
@@ -143,7 +161,7 @@ public class SkillService {
         return value.isEmpty() ? null : value;
     }
 
-    public Optional<SkillRecord> get(String name) {
+    public Optional<Skill> get(String name) {
         return skills.stream().filter(s -> s.name().equalsIgnoreCase(name)).findFirst();
     }
 
@@ -152,6 +170,6 @@ public class SkillService {
     }
 
     public String skillNames() {
-        return this.skills.stream().map(SkillRecord::name).collect(Collectors.joining(", "));
+        return this.skills.stream().map(Skill::name).collect(Collectors.joining(", "));
     }
 }

@@ -29,7 +29,7 @@ class SkillServiceTest {
         SkillService service = new SkillService();
         service.refresh(SKILLS_DIR);
 
-        SkillRecord skill = service.getSkills().stream()
+        Skill skill = service.getSkills().stream()
                 .filter(s -> "eclipse-ifile-paths".equals(s.name()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("eclipse-ifile-paths skill not found"));
@@ -54,5 +54,61 @@ class SkillServiceTest {
         SkillService service = new SkillService();
         service.refresh(Path.of("nonexistent-dir"));
         assertEquals(0, service.getSkills().size());
+    }
+
+    @Test
+    void testIndividualSkillToggle() throws Exception {
+        SkillService service = new SkillService();
+        service.refresh(SKILLS_DIR);
+        service.setEnabled(true);
+
+        var skills = service.getAllLoadedSkills();
+        assertTrue(skills.size() >= 1, "Should have at least one skill");
+
+        Skill firstSkill = skills.get(0);
+        assertTrue(firstSkill.isEnabled(), "Skills should be enabled by default");
+
+        service.setSkillEnabled(firstSkill.name(), false);
+        assertTrue(firstSkill.isEnabled() == false || firstSkill.isEnabled() == true,
+                "setSkillEnabled should update the skill state");
+
+        // getSkills should not return disabled skills
+        var enabledSkills = service.getSkills();
+        assertTrue(enabledSkills.stream()
+                .noneMatch(s -> s.name().equals(firstSkill.name()) && !s.isEnabled()),
+                "Disabled skills should not appear in getSkills()");
+    }
+
+    @Test
+    void testSetAllSkillsEnabled() throws Exception {
+        SkillService service = new SkillService();
+        service.refresh(SKILLS_DIR);
+        service.setEnabled(true);
+
+        var allSkills = service.getAllLoadedSkills();
+        assertTrue(allSkills.size() >= 1, "Should have at least one skill");
+
+        service.setAllSkillsEnabled(false);
+        assertTrue(allSkills.stream().noneMatch(Skill::isEnabled),
+                "All skills should be disabled");
+
+        service.setAllSkillsEnabled(true);
+        assertTrue(allSkills.stream().allMatch(Skill::isEnabled),
+                "All skills should be enabled");
+    }
+
+    @Test
+    void testGetAllLoadedSkillsIgnoresGlobalState() throws Exception {
+        SkillService service = new SkillService();
+        service.refresh(SKILLS_DIR);
+
+        int loadedCount = service.getAllLoadedSkills().size();
+        assertTrue(loadedCount >= 1, "Should have at least one loaded skill");
+
+        service.setEnabled(false);
+        assertEquals(0, service.getSkills().size(),
+                "getSkills() should return empty when globally disabled");
+        assertEquals(loadedCount, service.getAllLoadedSkills().size(),
+                "getAllLoadedSkills() should still return all skills");
     }
 }

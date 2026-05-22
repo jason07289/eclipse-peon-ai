@@ -49,6 +49,7 @@ import org.sterl.llmpeon.parts.tools.EclipseWorkspaceReadFileTool;
 import org.sterl.llmpeon.parts.widget.ActionsBarWidget;
 import org.sterl.llmpeon.parts.widget.ChatMarkdownWidget;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget;
+import org.sterl.llmpeon.parts.widget.StatusLineWidget.SkillMenuSelection;
 import org.sterl.llmpeon.parts.widget.UserInputWidget;
 import org.sterl.llmpeon.parts.widget.UserQuestionWidget;
 import org.sterl.llmpeon.shared.OnPartialAiResponse;
@@ -152,6 +153,11 @@ public class AIChatView implements EclipseAiMonitor {
             this::onSkillsToggle,
             enabled -> aiService.getMcpConnectionService().toggle(enabled),
             this::doCompressContext
+        );
+
+        statusLine.setSkillsMenuHandler(
+            () -> aiService.getSkillService().getAllLoadedSkills(),
+            this::onSkillMenuSelection
         );
 
         applyConfig();
@@ -315,7 +321,7 @@ public class AIChatView implements EclipseAiMonitor {
 
     public void refreshStatusLine() {
         statusLine.update(
-            aiService.getSkillService().loadedSkillCount(),
+            aiService.getSkillService().getSkills().size(),
             aiService.getAgentsMdService().hasAgentFile(),
             currentProject,
             getSelectedFile()
@@ -656,6 +662,15 @@ public class AIChatView implements EclipseAiMonitor {
 
     private void onSkillsToggle(boolean enabled) {
         aiService.getSkillService().setEnabled(enabled);
+    }
+
+    private void onSkillMenuSelection(SkillMenuSelection selection) {
+        if (selection.isAllSkills) {
+            aiService.getSkillService().setAllSkillsEnabled(selection.enabled);
+        } else {
+            aiService.getSkillService().setSkillEnabled(selection.skillName, selection.enabled);
+        }
+        EclipseUtil.runInUiThread(parent, this::refreshStatusLine);
     }
 
     /**
