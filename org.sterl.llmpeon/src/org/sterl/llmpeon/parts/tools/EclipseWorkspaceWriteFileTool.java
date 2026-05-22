@@ -116,7 +116,7 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
             String content) {
 
         ArgsUtil.requireNonBlank(filePath, "filePath");
-        ArgsUtil.requireNonBlank(filePath, "content");
+        ArgsUtil.requireNonBlank(content, "content");
 
         var targetProject = EclipseUtil.findOpenProject(filePath);
         String projectRelativePath = java.nio.file.Path.of(filePath).toString();

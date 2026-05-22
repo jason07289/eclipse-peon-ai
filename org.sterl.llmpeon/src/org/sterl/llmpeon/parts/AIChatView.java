@@ -46,6 +46,7 @@ import org.sterl.llmpeon.parts.shared.JdtUtil;
 import org.sterl.llmpeon.parts.shared.SimpleDiff;
 import org.sterl.llmpeon.parts.tools.AskUserTool;
 import org.sterl.llmpeon.parts.tools.EclipseWorkspaceReadFileTool;
+import org.sterl.llmpeon.parts.tools.WorkspaceMemoryTool;
 import org.sterl.llmpeon.parts.widget.ActionsBarWidget;
 import org.sterl.llmpeon.parts.widget.ChatMarkdownWidget;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget;
@@ -88,6 +89,7 @@ public class AIChatView implements EclipseAiMonitor {
 
     private final AtomicReference<IProgressMonitor> monitorRef = new AtomicReference<>(new NullProgressMonitor());
     private final VoiceInputService voiceService = new VoiceInputService();
+    private final WorkspaceMemoryTool workspaceMemoryTool = WorkspaceMemoryTool.getInstance();
     private volatile boolean recording = false;
 
     private volatile PeonMode currentMode = PeonMode.DEV;
@@ -169,6 +171,8 @@ public class AIChatView implements EclipseAiMonitor {
         aiService.getToolService().addTool(new AskUserTool(
             (question, answers, onAnswer) -> showQuestion(question, answers, onAnswer)
         ));
+
+        aiService.getToolService().addTool(workspaceMemoryTool);
 
         chatInput.enableSlashCommands(() -> aiService.getCommandService().getCommands());
     }
@@ -578,12 +582,15 @@ public class AIChatView implements EclipseAiMonitor {
             monitorRef.set(monitor);
             Exception ex = null;
             try {
+                var memoryMessage = workspaceMemoryTool.toChatMessage().orElse(null);
+
                 active.setStandingOrders(StandingOrdersBuilder.build(
                         getSelectedFile(), 
                         aiService.getAgentsMdService(), 
                         aiService.getTemplateContext(),
                         currentMode, 
-                        aiService.getAgentMode()));
+                        aiService.getAgentMode(),
+                        memoryMessage));
                 
                 active.call(text.isEmpty() ? null : text, this);
             } catch (ToolExecutionException e) {

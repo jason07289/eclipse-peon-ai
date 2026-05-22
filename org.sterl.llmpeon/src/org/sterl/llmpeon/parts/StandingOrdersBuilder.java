@@ -27,7 +27,8 @@ public class StandingOrdersBuilder {
             AgentsMdService agentsMdService,
             TemplateContext context,
             PeonMode currentMode,
-            AgentModeService agentMode) {
+            AgentModeService agentMode,
+            ChatMessage memoryMessage) {
 
         var orders = new ArrayList<ChatMessage>();
         if (selectedResource != null) {
@@ -36,11 +37,14 @@ public class StandingOrdersBuilder {
                     "Eclipse selected file filePath: " + JdtUtil.pathOf(selectedResource) +
                     (projectDiskPath == null 
                         ? "" 
-                        : "Disk path of project: " + projectDiskPath))
+                        : "Disk path of eclipse project: " + projectDiskPath))
                 );
         }
         if (agentsMdService.hasAgentFile()) {
             agentsMdService.agentMessage(context).ifPresent(orders::add);
+        }
+        if (memoryMessage != null) {
+            orders.add(memoryMessage);
         }
         if (currentMode == PeonMode.AGENT && agentMode.hasPlan()) {
             orders.add(SystemMessage.from(agentMode.planPathHint()));
