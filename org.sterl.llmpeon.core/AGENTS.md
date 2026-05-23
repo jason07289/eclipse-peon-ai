@@ -1,5 +1,6 @@
-- use lombok for Pojos
-- use eclipse tool to build test after code changes
+See parent: `/llmpeon-parent/AGENTS.md` (Global Rules).
+Alias for `org.sterl.llmpeon.core`.
 
-Build changes for /org.sterl.llmpeon:
-- `mvn clean verify`
+# Core Specifics
+- Use Lombok for POJOs.
+- Run tests using Eclipse tools (`runTests`).

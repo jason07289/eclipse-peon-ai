@@ -15,6 +15,18 @@ If a question can be answered by exploring the codebase, explore the codebase in
 - in eclipse `clean build`
 - non eclipse IDE `mvn clean verify` in the shell
 
+# Global Rules
+
+- **Thread Safety**: All code changes must be thread-safe (`Atomic*` / `ReentrantLock`). No single-threaded assumptions.
+- **Testing Strategy**: See module guidelines below for runner specifics (Eclipse vs Shell).
+
+# Module Guidelines (Links)
+
+Read these when working in specific modules:
+- `/org.sterl.llmpeon/AGENTS.md` — Plugin UI & Logic (Error handling patterns, Job usage).
+- `/llmpeon-core/AGENTS.md` — Core logic (Lombok conventions).
+- `/org.sterl.llmpeon.test/AGENTS.md` — Test execution specifics.
+
 # Structure eclipse plugin RCP
 
 - `doc/docs` - mkdocs defining the docs and spec of the project
