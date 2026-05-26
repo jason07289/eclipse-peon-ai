@@ -16,7 +16,6 @@ import org.sterl.llmpeon.shared.StringUtil;
 import org.sterl.llmpeon.tool.component.SmartToolExecutor;
 import org.sterl.llmpeon.tool.model.ToSimpleMessage;
 import org.sterl.llmpeon.tool.tools.AbstractTool;
-import org.sterl.llmpeon.tool.tools.CompactSessionTool;
 import org.sterl.llmpeon.tool.tools.SearchAgentTool;
 import org.sterl.llmpeon.tool.tools.ShellTool;
 import org.sterl.llmpeon.tool.tools.WebFetchTool;
@@ -55,7 +54,6 @@ public class ToolService {
         addTool(new WebFetchTool());
         addTool(new SearchAgentTool(this));
         addTool(new ShellTool());
-        addTool(new CompactSessionTool());
     }
 
     public List<ToolSpecification> toolSpecifications() {
@@ -78,6 +76,8 @@ public class ToolService {
     /**
      * Runs the full tool loop: calls the model via streaming, executes any tools, repeats until
      * the model produces a plain text response.
+     * 
+     * TODO: https://github.com/sterlp/eclipse-peon-ai/issues/55
      */
     @NonNull
     public ChatResponse executeLoop(@NonNull ToolLoopRequest req) {
@@ -220,19 +220,35 @@ public class ToolService {
      * Existing tools with the same name trigger an error.
      */
     public void addTool(SmartTool toolObject) {
+        var old = replaceTool(toolObject);
+        if (old != null) throw new RuntimeException("Tool " + old.getSpec().name() + " already registered ...");
+    }
+    
+    public SmartToolExecutor replaceTool(SmartTool toolObject) {
+        SmartToolExecutor result = null;
         for (Method method : toolObject.getClass().getDeclaredMethods()) {
             if (method.isAnnotationPresent(Tool.class)) {
                 var spec = ToolSpecifications.toolSpecificationFrom(method);
                 var old = toolExecutors.put(spec.name(), new SmartToolExecutor(toolObject, method, spec));
-                if (old != null) throw new RuntimeException("Tool with " + spec.name() + " already registered ...");
-                log.debug("added tool " + spec);
+                if (old != null) {
+                    result = old;
+                    log.info("replaced tool " + spec);
+                } else {
+                    log.debug("added tool   " + spec);
+                }
             }
         }
+        return result;
     }
 
     /** Removes all tools registered from the given tool object. */
     public void removeTool(SmartTool toolObject) {
-        for (Method method : toolObject.getClass().getDeclaredMethods()) {
+        removeTool(toolObject.getClass());
+    }
+    
+    /** Removes all tools registered from the given tool object. */
+    public void removeTool(Class<? extends SmartTool> toolClass) {
+        for (Method method : toolClass.getDeclaredMethods()) {
             if (method.isAnnotationPresent(Tool.class)) {
                 var spec = ToolSpecifications.toolSpecificationFrom(method);
                 toolExecutors.remove(spec.name());

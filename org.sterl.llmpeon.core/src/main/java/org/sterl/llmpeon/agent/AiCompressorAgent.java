@@ -21,10 +21,19 @@ public class AiCompressorAgent {
     private static final SystemMessage COMPRESS_SYSTEM = SystemMessage.systemMessage(PromptLoader.load("compressor.txt"));
 
     private final StreamingChatModel chatModel;
+    
+    private final Double temperature;
 
     public AiCompressorAgent(StreamingChatModel chatModel) {
+        this(chatModel, null);
+    }
+    /**
+     * Not every model supports a different temperature -- leave empty to use model defaults.
+     */
+    public AiCompressorAgent(StreamingChatModel chatModel, Double temperature) {
         super();
         this.chatModel = chatModel;
+        this.temperature = temperature;
     }
 
     /**
@@ -39,9 +48,11 @@ public class AiCompressorAgent {
 
         if (monitor != null) monitor.onTool("Compressing conversation " + messages.size() + " messages");
         var request = ChatRequest.builder()
-                .messages(COMPRESS_SYSTEM, UserMessage.from(msg.toString()))
-                .build();
-        return new StreamingBridge().call(chatModel, request, monitor);
+                .messages(COMPRESS_SYSTEM, UserMessage.from(msg.toString()));
+
+        if (temperature != null) request.temperature(temperature);
+
+        return new StreamingBridge().call(chatModel, request.build(), monitor);
     }
 
     String toText(ChatMessage msg) {
