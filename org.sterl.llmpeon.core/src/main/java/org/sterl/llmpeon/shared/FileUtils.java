@@ -93,7 +93,7 @@ public class FileUtils {
         return count;
     }
 
-    private static String dominantLineEnding(String content) {
+    public static String dominantLineEnding(String content) {
         return content.contains("\r\n") ? "\r\n" : "\n";
     }
 
