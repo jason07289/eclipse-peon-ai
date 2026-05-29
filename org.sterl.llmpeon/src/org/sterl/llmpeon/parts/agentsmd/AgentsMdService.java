@@ -7,10 +7,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
-import org.sterl.llmpeon.parts.StandingOrdersBuilder.MessageProvider;
+import org.eclipse.jface.text.templates.TemplateContext;
+import org.sterl.llmpeon.StandingOrdersBuilder.MessageProvider;
 import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.parts.shared.JdtUtil;
-import org.sterl.llmpeon.template.TemplateContext;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -19,7 +19,7 @@ import dev.langchain4j.data.message.UserMessage;
 public class AgentsMdService implements MessageProvider {
 
     private static final String HEADER = 
-            "AGENTS.md: %s\n" +
+            "%s\n" +
             "Use this file for critical, non-obvious, always-needed project settings — like workspace memory, but scoped to this project. Edit it directly. Keep it very short, and update or clean up entries as work evolves so only current, relevant rules remain.\n" +
             "---\n";
 
@@ -28,11 +28,11 @@ public class AgentsMdService implements MessageProvider {
     private final AtomicBoolean enabled = new AtomicBoolean(true);
     
     @Override
-    public ChatMessage apply(TemplateContext t) {
+    public ChatMessage get() {
         if (!enabled.get() || agentsMd.get() == null || !agentsMd.get().exists()) return null;
         var f = agentsMd.get();
         try {
-            var text = t.process(f.readString());
+            var text = f.readString();
             return UserMessage.from(String.format(HEADER, JdtUtil.pathOf(f)) + "\n" + text);
         } catch (CoreException e) {
             throw new RuntimeException(e);
@@ -69,8 +69,7 @@ public class AgentsMdService implements MessageProvider {
         } catch (CoreException e) {
             throw new RuntimeException("Failed to read " + file, e);
         }
-        String processed = context.process(content);
-        String fullText = String.format(HEADER, JdtUtil.pathOf(file)) + processed;
+        String fullText = String.format(HEADER, JdtUtil.pathOf(file)) + " content:\n" + content;
         return Optional.of(AiMessage.from(fullText));
     }
 

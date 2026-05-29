@@ -78,6 +78,8 @@ public class ToolService {
      * the model produces a plain text response.
      * 
      * TODO: https://github.com/sterlp/eclipse-peon-ai/issues/55
+     * Keep in mind any change to the message history may kill the kv cache!!
+     * https://github.com/sterlp/eclipse-peon-ai/issues/60
      */
     @NonNull
     public ChatResponse executeLoop(@NonNull ToolLoopRequest req) {
@@ -88,6 +90,8 @@ public class ToolService {
         do {
             var messages = new ArrayList<ChatMessage>(req.staticMessages);
             messages.addAll(req.memory.messages());
+            messages.addAll(req.userContextInformations); // keep it close to the user message to have the cache working
+            if (req.userMessage != null) messages.add(req.userMessage);
 
             var builder = ChatRequest.builder()
                     .temperature(req.temperature)

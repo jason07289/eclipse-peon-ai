@@ -11,11 +11,11 @@ import org.sterl.llmpeon.AbstractChatService;
 import org.sterl.llmpeon.AiDeveloperService;
 import org.sterl.llmpeon.AiPlannerService;
 import org.sterl.llmpeon.PeonMode;
+import org.sterl.llmpeon.StandingOrdersBuilder.MessageProvider;
 import org.sterl.llmpeon.ai.ConfiguredModel;
 import org.sterl.llmpeon.ai.LlmConfig;
 import org.sterl.llmpeon.ai.model.AiModel;
 import org.sterl.llmpeon.command.CommandService;
-import org.sterl.llmpeon.parts.StandingOrdersBuilder.MessageProvider;
 import org.sterl.llmpeon.parts.agent.AgentModeService;
 import org.sterl.llmpeon.parts.agentsmd.AgentsMdService;
 import org.sterl.llmpeon.parts.config.LlmPreferenceInitializer;
@@ -31,7 +31,6 @@ import org.sterl.llmpeon.parts.tools.EclipseRunTestTool;
 import org.sterl.llmpeon.parts.tools.EclipseWorkspaceReadFileTool;
 import org.sterl.llmpeon.parts.tools.EclipseWorkspaceWriteFileTool;
 import org.sterl.llmpeon.skill.SkillService;
-import org.sterl.llmpeon.template.TemplateContext;
 import org.sterl.llmpeon.tool.ToolService;
 import org.sterl.llmpeon.tool.tools.CompactSessionTool;
 import org.sterl.llmpeon.tool.tools.DiskFileReadTool;
@@ -61,7 +60,6 @@ public class PeonAiService implements MessageProvider {
     private final ToolService toolService;
     private final SkillService skillService;
     private final CommandService commandService;
-    private final TemplateContext context;
     private final AgentsMdService agentsMdService;
     private final AiDeveloperService developerService;
     private final AiPlannerService plannerService;
@@ -90,7 +88,6 @@ public class PeonAiService implements MessageProvider {
         this.toolService = null;
         this.skillService = null;
         this.commandService = null;
-        this.context = null;
         this.agentsMdService = null;
         this.agentMode = null;
         this.agentModeTool = null;
@@ -118,7 +115,6 @@ public class PeonAiService implements MessageProvider {
         toolService             = new ToolService();
         skillService            = new SkillService();
         commandService          = new CommandService();
-        context                 = new TemplateContext(rootPath);
         agentsMdService         = new AgentsMdService();
 
         workspaceWriteFilesTool = new EclipseWorkspaceWriteFileTool();
@@ -140,12 +136,12 @@ public class PeonAiService implements MessageProvider {
         toolService.addTool(new EclipseConsoleLogTool());
         toolService.addTool(new SkillTool(skillService));
 
-        developerService = new AiDeveloperService(configuredModel, toolService, skillService, context);
-        plannerService   = new AiPlannerService(configuredModel, toolService, skillService, context);
+        developerService = new AiDeveloperService(configuredModel, toolService, skillService);
+        plannerService   = new AiPlannerService(configuredModel, toolService, skillService);
 
         // Agent mode uses separate instances with isolated memory
-        var agentDev  = new AiDeveloperService(configuredModel, toolService, skillService, context);
-        var agentPlan = new AiPlannerService(configuredModel, toolService, skillService, context);
+        var agentDev  = new AiDeveloperService(configuredModel, toolService, skillService);
+        var agentPlan = new AiPlannerService(configuredModel, toolService, skillService);
         agentMode     = new AgentModeService(agentPlan, agentDev, sendTrigger, openInEditorCallback);
         agentModeTool = new AgentModeTool(agentMode);
 
@@ -170,7 +166,6 @@ public class PeonAiService implements MessageProvider {
         agentMode.setProject(project);  // volatile write inside AgentModeService
 
         var projectPath = JdtUtil.pathOf(project);
-        context.setWorkingDir(projectPath);
 
         workspaceWriteFilesTool.setCurrentProject(project);
 
@@ -300,10 +295,6 @@ public class PeonAiService implements MessageProvider {
         return commandService;
     }
 
-    public TemplateContext getTemplateContext() {
-        return context;
-    }
-
     public AgentsMdService getAgentsMdService() {
         return agentsMdService;
     }
@@ -351,8 +342,9 @@ public class PeonAiService implements MessageProvider {
         return mode;
     }
 
+    // TODO do we provide this twice?
     @Override
-    public ChatMessage apply(TemplateContext t) {
+    public ChatMessage get() {
         var agentMode = getAgentMode();
         if (getPeonMode() == PeonMode.AGENT && agentMode.hasPlan()) {
             return SystemMessage.from(agentMode.planPathHint());
