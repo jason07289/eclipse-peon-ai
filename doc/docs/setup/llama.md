@@ -28,13 +28,14 @@ Placeholders used:
 
 ### Start Server (OpenAI-compatible API)
 
+(ngl -1 we load all layers info VRAM)
+
 ```bat
 llama-server.exe ^
   -m MODEL ^
-  -ngl 64 ^
+  -ngl -1 ^
   -c 95000 ^
   -fa on ^
-  -ngl -1 ^
   --cache-type-k q8_0 ^
   --cache-type-v q8_0 ^
   --parallel 1 ^
@@ -56,6 +57,7 @@ The server exposes an OpenAI-compatible API at `http://localhost:PORT/v1`. The b
 ### Memory Check (VRAM usage before server start)
 
 Loads the model, prints memory breakdown, and exits immediately:
+(ngl to play with the layers -- usually we should offload all.)
 
 ```bat
 llama-cli.exe ^
