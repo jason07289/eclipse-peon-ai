@@ -72,6 +72,7 @@ public enum AiProvider {
                     .baseUrl(c.getUrl())
                     .modelName(c.getModel())
                     .apiKey(c.getApiKey())
+                    .strictJsonSchema(true)
                     .returnThinking(c.isThinkingEnabled())
                     .sendThinking(c.shouldWeSendThinkingBackToLLM())
                     .customHeaders(c.getHeaderParams())

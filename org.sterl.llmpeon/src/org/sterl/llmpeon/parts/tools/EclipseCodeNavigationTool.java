@@ -83,8 +83,10 @@ public class EclipseCodeNavigationTool extends AbstractEclipseTool {
         }
     }
 
-    @Tool("Eclipse/Java: Read current version of a used type. Covers JDK and used JARs — prefer over decompiling JARs. java.io.File etc.")
-    public String getTypeSource(
+    public static final String GET_TYPE_SOURCE = "readTypeSource";
+    @Tool(name = GET_TYPE_SOURCE, 
+          value = "Eclipse/Java: Read source or JavaDoc of the type. Covers JDK and used JARs — prefer over decompiling JARs. java.io.File etc.")
+    public String readTypeSource(
             @P(description = "package name for this type e.g.: java.io", name = "package") String pkg,
             @P(description = "type name e.g.: File", name = "typeName") String typeName,
             @P(description = "project name to limit search scope (optional)", required = false, name = "projectName") String projectName) {

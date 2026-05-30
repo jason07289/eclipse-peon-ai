@@ -2,6 +2,8 @@ package org.sterl.llmpeon.parts;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,6 +47,7 @@ import org.sterl.llmpeon.parts.monitor.EclipseAiMonitor;
 import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.parts.shared.SimpleDiff;
 import org.sterl.llmpeon.parts.tools.AskUserTool;
+import org.sterl.llmpeon.parts.tools.EclipseCodeNavigationTool;
 import org.sterl.llmpeon.parts.tools.memory.WorkspaceMemoryTool;
 import org.sterl.llmpeon.parts.widget.ActionsBarWidget;
 import org.sterl.llmpeon.parts.widget.ChatMarkdownWidget;
@@ -62,6 +65,7 @@ import org.sterl.llmpeon.voice.VoiceConfig;
 import org.sterl.llmpeon.voice.VoiceInputService;
 
 import dev.langchain4j.data.message.ChatMessageType;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.ToolExecutionException;
 import jakarta.annotation.PostConstruct;
@@ -176,6 +180,14 @@ public class AIChatView implements EclipseAiMonitor {
         ));
 
         aiService.getToolService().addTool(workspaceMemoryTool);
+        
+        var dateInfo = "Today: " + LocalDate.now() 
+                + " — APIs and libraries may have changed since your training cutoff. "
+                + "Don't rely only on internal API knowledge — explore base classes and libs if possible with e.g. using "
+                + EclipseCodeNavigationTool.GET_TYPE_SOURCE + " for java.";
+
+        aiService.getDeveloperService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
+        aiService.getPlannerService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
 
         chatInput.enableSlashCommands(() -> aiService.getCommandService().getCommands());
     }

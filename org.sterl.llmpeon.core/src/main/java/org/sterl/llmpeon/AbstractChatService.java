@@ -47,6 +47,9 @@ public abstract class AbstractChatService {
     protected final ConfiguredModel configuredModel;
 
     protected final ToolService toolService;
+    
+    private final List<ChatMessage> staticContext = new ArrayList<>();
+    // TODO needs re-thinking
     private final List<ChatMessage> userContextInformations = new ArrayList<>();
     private volatile int contextTokenSize = 0;
 
@@ -146,6 +149,15 @@ public abstract class AbstractChatService {
         this.userContextInformations.clear();
         if (orders != null) this.userContextInformations.addAll(orders);
     }
+    
+    /**
+     * Only context information which doesn't change - only if we clear!
+     * Otherwise we kill the KV-cache!
+     */
+    public void setStaticContext(List<ChatMessage> staticContext) {
+        this.staticContext.clear();
+        if (staticContext != null) this.staticContext.addAll(staticContext);
+    }
 
     public void clear() {
         memory.clear();
@@ -161,6 +173,7 @@ public abstract class AbstractChatService {
         var messages = new ArrayList<ChatMessage>();
         var override = consumeOneShotSystemPrompt();
         messages.add(SystemMessage.from(override != null ? override : getSystemPrompt()));
+        messages.addAll(staticContext);
         return messages;
     }
 

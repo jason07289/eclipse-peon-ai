@@ -46,5 +46,7 @@ public class PeonAiServiceTest  extends AbstractTest {
         
         assertIsPresent(aiService.getToolService().getTool(CompactSessionTool.class));
     }
+    
+    // TODO add tests concerning the message build -- check if it was properly constructed.
 
 }

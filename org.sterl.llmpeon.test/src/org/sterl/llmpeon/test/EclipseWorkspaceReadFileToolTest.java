@@ -54,7 +54,7 @@ public class EclipseWorkspaceReadFileToolTest extends AbstractTest {
         var tool = new EclipseCodeNavigationTool();
 
         // WHEN
-        var content = tool.getTypeSource(
+        var content = tool.readTypeSource(
                 getClass().getPackageName(), 
                 getClass().getSimpleName(), 
                 "org.sterl.llmpeon.test");
@@ -71,7 +71,7 @@ public class EclipseWorkspaceReadFileToolTest extends AbstractTest {
         var tool = new EclipseCodeNavigationTool();
 
         // WHEN
-        var content = tool.getTypeSource(
+        var content = tool.readTypeSource(
                 "foo.bar", 
                 getClass().getSimpleName(), 
                 "org.sterl.llmpeon.test");

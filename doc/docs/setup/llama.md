@@ -34,6 +34,7 @@ llama-server.exe ^
   -ngl 64 ^
   -c 95000 ^
   -fa on ^
+  -ngl -1 ^
   --cache-type-k q8_0 ^
   --cache-type-v q8_0 ^
   --parallel 1 ^
@@ -41,6 +42,8 @@ llama-server.exe ^
   --top-p 0.95 ^
   --top-k 20 ^
   --host 0.0.0.0 ^
+  --cache-reuse 256 ^
+  --jinja ^
   --port PORT
 ```
 
@@ -78,6 +81,8 @@ Run this before changing `-c` to verify the new context size still fits in VRAM.
 ---
 
 ### Benchmark (PP + TG at various context depths)
+
+- https://github.com/ggml-org/llama.cpp/blob/master/tools/llama-bench/README.md
 
 ```bat
 llama-bench.exe ^
@@ -131,3 +136,7 @@ LM Studio and Ollama are convenient alternatives if you prefer a GUI or want aut
 | **llama.cpp direct** | Manual | Full | None |
 | **LM Studio** | GUI | Limited | Medium |
 | **Ollama** | CLI/GUI | Medium | Low |
+
+## See also
+
+- https://github.com/eugr/llama-benchy

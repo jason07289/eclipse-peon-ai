@@ -73,7 +73,10 @@ https://github.com/lmstudio-ai/lmstudio-bug-tracker/issues/1592
 
 # Benchmarks
 
-Zähle mir die letzten 5 Bundeskanzler der Bundesrepublik Deutschland auf und nenne zudem kurz in einer Tabelle, wie lange diese regiert haben und ihre am meisten gefeierte Leistung während ihrer Regierungszeit.
+Hier geht es um die Nutzbarkeit des LLMs für Coding Aufgaben - nicht um die Geschwindigkeit!
+Für Geschwindigkeit schaut ins llama.cpp bzw:
+- https://github.com/ggml-org/llama.cpp/blob/master/tools/llama-bench/README.md
+- https://github.com/eugr/llama-benchy
 
 ## AMD 7900 XT 20 GB on Windows
 
