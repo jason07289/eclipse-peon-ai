@@ -3,7 +3,6 @@ package org.sterl.llmpeon;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -12,7 +11,6 @@ import org.sterl.llmpeon.ai.ConfiguredModel;
 import org.sterl.llmpeon.ai.LlmConfig;
 import org.sterl.llmpeon.shared.AiMonitor;
 import org.sterl.llmpeon.shared.StringUtil;
-import org.sterl.llmpeon.skill.SkillService;
 import org.sterl.llmpeon.streaming.StreamingBridge;
 import org.sterl.llmpeon.tool.ToolLoopRequest;
 import org.sterl.llmpeon.tool.ToolService;
@@ -50,7 +48,7 @@ public abstract class AbstractChatService {
     
     private final List<ChatMessage> staticContext = new ArrayList<>();
     // TODO needs re-thinking
-    private final List<ChatMessage> userContextInformations = new ArrayList<>();
+    private final List<String> userContextInformations = new ArrayList<>();
     private volatile int contextTokenSize = 0;
 
     /**
@@ -60,11 +58,9 @@ public abstract class AbstractChatService {
      */
     private String oneShotSystemPrompt;
 
-    protected AbstractChatService(ConfiguredModel configuredModel, ToolService toolService,
-            SkillService skillService) {
+    protected AbstractChatService(ConfiguredModel configuredModel, ToolService toolService) {
         this.toolService = toolService;
         this.configuredModel = configuredModel;
-        updateConfig(configuredModel.getConfig());
     }
 
     protected abstract String getSystemPrompt();
@@ -100,8 +96,16 @@ public abstract class AbstractChatService {
         monitor = AiMonitor.nullSafety(monitor);
         monitor.onCallStart(message);
         // auto compress if we are close to full before we start
+        if (configuredModel.getAutoCompactAfter() < contextTokenSize) compressContext(monitor);
+        
+        if (userContextInformations.size() > 0) {
+            userContextInformations.stream()
+                    .filter(m -> !hasUserText(m))
+                    .forEach(m -> memory.add(UserMessage.from(m)));
+        }
+
         if (StringUtil.hasValue(message)) {
-            if (configuredModel.getAutoCompactAfter() < contextTokenSize) compressContext(monitor);
+            memory.add(UserMessage.from(message));
         }
 
         var start = Instant.now();
@@ -110,8 +114,6 @@ public abstract class AbstractChatService {
         var response = toolService.executeLoop(
                 new ToolLoopRequest(memory, configuredModel.getChatModel(), bridge)
                         .staticMessages(staticMessages)
-                        .userContextInformations(userContextInformations)
-                        .userMessage(message == null ? null : UserMessage.from(message))
                         .monitor(monitor)
                         .toolFilter(getToolFilter())
                         .includeMcpTools(includesMcpTools())
@@ -137,18 +139,6 @@ public abstract class AbstractChatService {
     public void updateConfig(LlmConfig config) {
         configuredModel.updateConfig(config);
     }
-
-    public List<ChatMessage> getUserContextInformations() {
-        return Collections.unmodifiableList(userContextInformations);
-    }
-
-    /**
-     * added directly above the user input to avoid cache invalidations
-     */
-    public void setUserContextInformations(List<ChatMessage> orders) {
-        this.userContextInformations.clear();
-        if (orders != null) this.userContextInformations.addAll(orders);
-    }
     
     /**
      * Only context information which doesn't change - only if we clear!
@@ -157,6 +147,15 @@ public abstract class AbstractChatService {
     public void setStaticContext(List<ChatMessage> staticContext) {
         this.staticContext.clear();
         if (staticContext != null) this.staticContext.addAll(staticContext);
+    }
+    
+    public void setUserContextInformations(List<String> userContextInformations) {
+        this.userContextInformations.clear();
+        if (userContextInformations != null) this.userContextInformations.addAll(userContextInformations);
+    }
+    
+    public List<String> getUserContextInformations() {
+        return new ArrayList<>(this.userContextInformations);
     }
 
     public void clear() {

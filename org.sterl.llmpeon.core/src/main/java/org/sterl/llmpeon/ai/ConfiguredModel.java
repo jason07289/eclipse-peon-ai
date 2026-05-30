@@ -22,13 +22,20 @@ public class ConfiguredModel {
     public ConfiguredModel(LlmConfig config) {
         updateConfig(config);
     }
+    
+    public ConfiguredModel(LlmConfig config, StreamingChatModel model) {
+        updateConfig(config);
+        this.chatModel.set(model);
+    }
 
     public ChatResponse callBlocking(ChatRequest req, AiMonitor monitor) {
         return new StreamingBridge().call(getChatModel(), req, monitor);
     }
     
     public StreamingChatModel getChatModel() {
-        if (chatModel.get() == null) chatModel.set(config.getProviderType().buildModel(config));
+        if (chatModel.get() == null) {
+            chatModel.set(config.getProviderType().buildModel(config));
+        }
         return chatModel.get();
     }
     
@@ -96,7 +103,9 @@ public class ConfiguredModel {
 
     public void updateConfig(LlmConfig newConfig) {
         if (newConfig == null) throw new NullPointerException("LlmConfig cannot be null!");
-        this.config = newConfig;
-        chatModel.set(null); // rebuild
+        if (this.config == null || !this.config.equals(newConfig)) {
+            this.config = newConfig;
+            chatModel.set(null); // rebuild
+        }
     }
 }

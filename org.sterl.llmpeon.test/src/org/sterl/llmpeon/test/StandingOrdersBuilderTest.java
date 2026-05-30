@@ -28,10 +28,10 @@ public class StandingOrdersBuilderTest extends AbstractTest {
         var messages = standingOrders.build();
         
         // THAN agents md
-        assertHasUserMessageWith(messages, "/AGENTS.md");
-        assertHasUserMessageWith(messages, "(Global Rules)");
+        assertHasMessageWith(messages, "/AGENTS.md");
+        assertHasMessageWith(messages, "(Global Rules)");
         // AND no nulls ... 
-        assertHasNoUserMessageWith(messages, " null");
+        assertHasMessageWith(messages, " null");
     }
     
     @Test
@@ -46,11 +46,11 @@ public class StandingOrdersBuilderTest extends AbstractTest {
         var messages = standingOrders.build();
         
         // THEN
-        assertHasUserMessageWith(messages, project.getName());
-        assertHasUserMessageWith(messages, JdtUtil.diskPathOf(project));
+        assertHasMessageWith(messages, project.getName());
+        assertHasMessageWith(messages, JdtUtil.diskPathOf(project));
 
         // AND no nulls ... 
-        assertHasNoUserMessageWith(messages, " null");
+        assertHasMessageWith(messages, " null");
     }
     
     public static void assertHasUserMessageWith(Collection<ChatMessage> messages, String content) {

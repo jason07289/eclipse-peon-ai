@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 import org.sterl.llmpeon.AiDeveloperService;
 import org.sterl.llmpeon.mock.MockLlmServer;
 import org.sterl.llmpeon.shared.AiMonitor;
-import org.sterl.llmpeon.skill.SkillService;
 import org.sterl.llmpeon.tool.ToolService;
 
 import dev.langchain4j.data.message.AiMessage;
@@ -39,7 +38,7 @@ class AiCompressorAgentTest {
                 String.format("http://localhost:%d/v1", server.getPort()));
         server.queueResponse("WHAT: Build a Java Hello world application that displays the current time when executed.");
 
-        var subject = new AiDeveloperService(config.build(), new ToolService(), new SkillService());
+        var subject = new AiDeveloperService(config.build(), new ToolService());
 
         subject.addMessage(UserMessage.from("Build be a Hello world"));
         subject.addMessage(AiMessage.from("In which language?"));

@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.sterl.llmpeon.ai.AiProvider;
 import org.sterl.llmpeon.ai.LlmConfig;
-import org.sterl.llmpeon.skill.SkillService;
 import org.sterl.llmpeon.tool.ToolService;
 
 import dev.langchain4j.data.message.AiMessage;
@@ -20,7 +19,7 @@ class AiPlannerServiceTest {
     @BeforeEach
     void setUp() {
         var config = LlmConfig.newConfig(AiProvider.OLLAMA, "test-model", "http://localhost:9999");
-        subject = new AiPlannerService(config.build(), new ToolService(), new SkillService());
+        subject = new AiPlannerService(config.build(), new ToolService());
     }
 
     @Test
@@ -40,6 +39,7 @@ class AiPlannerServiceTest {
         assertEquals("Here is the plan: 1. Context 2. Affected files 3. Steps", plan.get().text());
 
     }
+
     @Test
     void extractLastPlan_returnsLastPlan_forLargeConversation() {
         // GIVEN: > 4 messages

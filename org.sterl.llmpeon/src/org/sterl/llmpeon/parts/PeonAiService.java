@@ -38,8 +38,6 @@ import org.sterl.llmpeon.tool.tools.DiskFileWriteTool;
 import org.sterl.llmpeon.tool.tools.DiskGrepTool;
 import org.sterl.llmpeon.tool.tools.SkillTool;
 
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 
 /**
@@ -136,12 +134,12 @@ public class PeonAiService implements MessageProvider {
         toolService.addTool(new EclipseConsoleLogTool());
         toolService.addTool(new SkillTool(skillService));
 
-        developerService = new AiDeveloperService(configuredModel, toolService, skillService);
-        plannerService   = new AiPlannerService(configuredModel, toolService, skillService);
+        developerService = new AiDeveloperService(configuredModel, toolService);
+        plannerService   = new AiPlannerService(configuredModel, toolService);
 
         // Agent mode uses separate instances with isolated memory
-        var agentDev  = new AiDeveloperService(configuredModel, toolService, skillService);
-        var agentPlan = new AiPlannerService(configuredModel, toolService, skillService);
+        var agentDev  = new AiDeveloperService(configuredModel, toolService);
+        var agentPlan = new AiPlannerService(configuredModel, toolService);
         agentMode     = new AgentModeService(agentPlan, agentDev, sendTrigger, openInEditorCallback);
         agentModeTool = new AgentModeTool(agentMode);
 
@@ -344,10 +342,10 @@ public class PeonAiService implements MessageProvider {
 
     // TODO do we provide this twice?
     @Override
-    public ChatMessage get() {
+    public String get() {
         var agentMode = getAgentMode();
         if (getPeonMode() == PeonMode.AGENT && agentMode.hasPlan()) {
-            return SystemMessage.from(agentMode.planPathHint());
+            return agentMode.planPathHint();
         }
         return null;
     }

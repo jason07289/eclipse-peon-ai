@@ -18,8 +18,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ChatMessage;
 
 public class WorkspaceMemoryTool extends AbstractEclipseTool implements MessageProvider {
 
@@ -151,7 +149,7 @@ public class WorkspaceMemoryTool extends AbstractEclipseTool implements MessageP
     }
 
     @Override
-    public ChatMessage get() {
+    public String get() {
         if (entries.isEmpty()) return null;
         
         StringBuilder sb = new StringBuilder();
@@ -163,7 +161,6 @@ public class WorkspaceMemoryTool extends AbstractEclipseTool implements MessageP
             sb.append(displayIndex).append(". [").append(g.createdAt()).append("] ").append(g.text()).append("\n");
         }
         
-        String content = sb.toString().trim();
-        return new AiMessage(content);
+        return sb.toString().trim();
     }
 }

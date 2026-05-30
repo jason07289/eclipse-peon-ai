@@ -15,8 +15,6 @@ import java.util.stream.Collectors;
 import org.sterl.llmpeon.StandingOrdersBuilder.MessageProvider;
 import org.sterl.llmpeon.shared.PromptYmlParser;
 
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.UserMessage;
 import lombok.NoArgsConstructor;
 
 @NoArgsConstructor
@@ -30,14 +28,14 @@ public class SkillService implements MessageProvider {
         refresh(skillsDirectory);
     }
 
-    public ChatMessage get() {
+    public String get() {
         if (getSkills().isEmpty()) return null;
         var string = getSkills().stream()
                 .map(s -> s.shortDescription())
                 .collect(Collectors.joining("\n"));
-        return UserMessage.from("""
-                Following skills are availble load and read them them if a task maches the name or description.
-                """ + string);
+        return """
+                Following skills are availble load and read them if my task maches the name or description.
+                """ + string;
     }
 
     public void setEnabled(boolean enabled) {

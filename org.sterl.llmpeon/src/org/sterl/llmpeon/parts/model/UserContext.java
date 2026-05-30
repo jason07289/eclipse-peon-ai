@@ -10,9 +10,6 @@ import org.sterl.llmpeon.parts.shared.JdtUtil;
 import org.sterl.llmpeon.parts.tools.EclipseWorkspaceReadFileTool;
 import org.sterl.llmpeon.shared.StringUtil;
 
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.UserMessage;
-
 public class UserContext implements MessageProvider {
     private volatile IProject currentProject;
     private volatile boolean projectPinned = false;
@@ -21,7 +18,7 @@ public class UserContext implements MessageProvider {
     private volatile ITextSelection textSelection;
 
     @Override
-    public ChatMessage get() {
+    public String get() {
         if (currentProject == null && selectedResource == null) return null;
         
         var sb = new StringBuilder();
@@ -33,7 +30,7 @@ public class UserContext implements MessageProvider {
             sb.append("\nFile selected: ").append(JdtUtil.pathOf(selectedResource));
             sb.append("\nDisk path:     ").append(JdtUtil.diskPathOf(selectedResource));
         }
-        return UserMessage.from(sb.toString());
+        return sb.toString();
     }
     
     public String getUserSelection() {

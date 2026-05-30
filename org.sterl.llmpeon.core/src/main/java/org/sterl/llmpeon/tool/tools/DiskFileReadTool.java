@@ -95,7 +95,6 @@ public class DiskFileReadTool extends AbstractTool {
         if (matches.isEmpty()) {
             suffix =  "Use " + LIST_DISK_NAME + " to explore the project structure.";
         }
-        System.err.println(workingDir + " " + query + " " + matches.size());
         return AiReponseBuilder.searchComplete(matches, suffix);
     }
 

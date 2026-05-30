@@ -5,8 +5,10 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
 import java.io.File;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.stream.Collectors;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
@@ -17,6 +19,9 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.junit.BeforeClass;
+
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 
 public abstract class AbstractTest {
     
@@ -78,6 +83,21 @@ public abstract class AbstractTest {
         }, new NullProgressMonitor());
 
         latch.await();
+    }
+    
+    public static void assertHasUserMessageWith(Collection<ChatMessage> messages, String content) {
+        var textMessages = messages.stream()
+            .filter(m -> m instanceof UserMessage)
+            .map(m -> ((UserMessage)m).singleText())
+            .toList();
+        assertHasMessageWith(textMessages, content);
+    }
+    
+    public static void assertHasMessageWith(Collection<String> textMessages, String content) {
+        var match = textMessages.stream().filter(m -> m.contains(content)).findAny();
+        assertTrue("Could not find: \n" + content
+                + "\nin:\n" + textMessages.stream().collect(Collectors.joining("\n")), 
+                match.isPresent());
     }
 
     protected static boolean isWorkspaceAvailable() {

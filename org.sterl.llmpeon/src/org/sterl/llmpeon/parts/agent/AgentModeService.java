@@ -30,7 +30,7 @@ public class AgentModeService {
 
     private static final int MAX_RETRIES = 3;
 
-    private SystemMessage plannerAgentMessage() {
+    private String plannerAgentMessage() {
         var sb = new StringBuilder("""
                 When your plan is complete, instead of presenting the plan, call savePlan automatically as your last action with:
                 1. Context
@@ -44,10 +44,10 @@ public class AgentModeService {
                 Proceed only if you have sufficient context; use the codebase to fill gaps.
                 Document assumptions and any unresolved gaps in the Design decisions section.
                 """);
-        return SystemMessage.from(sb.toString());
+        return sb.toString();
     }
 
-    private SystemMessage developerAgentMessage() {
+    private String developerAgentMessage() {
         var sb = new StringBuilder("""
                 If you cannot proceed after %d attempts (build failure, missing context,
                 conflicting requirements), call reportProblem with a detailed description.
@@ -56,7 +56,7 @@ public class AgentModeService {
         if (autonomous) sb.append("""
                 IN AUTONOMOUS MODE — execute the plan without asking question, confirmation or approval.
                 """);
-        return SystemMessage.from(sb.toString());
+        return sb.toString();
     }
 
     private final AiPlannerService plannerService;
@@ -106,7 +106,7 @@ public class AgentModeService {
     public ChatResponse call(String message, AiMonitor monitor) {
         var service = getActiveService();
         var orders = new ArrayList<>(service.getUserContextInformations());
-        orders.add(0, phase == Phase.PLANNING ? plannerAgentMessage() : developerAgentMessage());
+        orders.add(phase == Phase.PLANNING ? plannerAgentMessage() : developerAgentMessage());
         service.setUserContextInformations(orders);
         return service.call(message, monitor);
     }

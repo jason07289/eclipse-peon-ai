@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
-import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 
 /**
@@ -20,7 +19,7 @@ public class StandingOrdersBuilder {
      * Use {@link SystemMessage} only for static messages which do not change.
      * Keep in mind any change to the message history may kill the kv cache!!
      */
-    public interface MessageProvider extends Supplier<ChatMessage> {}
+    public interface MessageProvider extends Supplier<String> {}
     
     private final Set<MessageProvider> providers = new LinkedHashSet<StandingOrdersBuilder.MessageProvider>();
     
@@ -32,9 +31,9 @@ public class StandingOrdersBuilder {
         return this;
     }
     
-    public List<ChatMessage> build() {
+    public List<String> build() {
         
-        var result = new ArrayList<ChatMessage>();
+        var result = new ArrayList<String>();
         
         for (var p : providers) {
             var msg = p.get();

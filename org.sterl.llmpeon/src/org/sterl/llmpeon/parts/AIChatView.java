@@ -57,7 +57,6 @@ import org.sterl.llmpeon.parts.widget.UserInputWidget;
 import org.sterl.llmpeon.parts.widget.UserQuestionWidget;
 import org.sterl.llmpeon.shared.OnPartialAiResponse;
 import org.sterl.llmpeon.shared.StringUtil;
-import org.sterl.llmpeon.tool.ToolService;
 import org.sterl.llmpeon.tool.model.SimpleMessage;
 import org.sterl.llmpeon.tool.model.SimpleMessage.Type;
 import org.sterl.llmpeon.tool.tools.ShellTool;
@@ -608,12 +607,11 @@ public class AIChatView implements EclipseAiMonitor {
 
         lockWhileWorking(true);
         Job.create("Peon AI request", monitor -> {
-            monitor.beginTask("Arbeit, Arbeit!", aiService.getPeonMode() == PeonMode.AGENT ? ToolService.MAX_ITERATIONS * 2 : ToolService.MAX_ITERATIONS);
+            monitor.beginTask("Arbeit, Arbeit!", 100);
             monitorRef.set(monitor);
             Exception ex = null;
             try {
                 active.setUserContextInformations(this.standingOrders.build());
-                
                 active.call(text.isEmpty() ? null : text, this);
             } catch (ToolExecutionException e) {
                 if (!isCanceled()) {

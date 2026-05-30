@@ -13,8 +13,6 @@ import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.parts.shared.JdtUtil;
 
 import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.UserMessage;
 
 public class AgentsMdService implements MessageProvider {
 
@@ -28,12 +26,12 @@ public class AgentsMdService implements MessageProvider {
     private final AtomicBoolean enabled = new AtomicBoolean(true);
     
     @Override
-    public ChatMessage get() {
+    public String get() {
         if (!enabled.get() || agentsMd.get() == null || !agentsMd.get().exists()) return null;
         var f = agentsMd.get();
         try {
             var text = f.readString();
-            return UserMessage.from(String.format(HEADER, JdtUtil.pathOf(f)) + "\n" + text);
+            return String.format(HEADER, JdtUtil.pathOf(f)) + "\n" + text;
         } catch (CoreException e) {
             throw new RuntimeException(e);
         }

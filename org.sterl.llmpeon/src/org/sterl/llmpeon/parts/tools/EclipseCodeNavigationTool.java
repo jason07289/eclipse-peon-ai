@@ -45,9 +45,9 @@ public class EclipseCodeNavigationTool extends AbstractEclipseTool {
 
     @Tool("Eclipse/Java: Find Java types by name/wildcard. Searches in workspace, JDK and used JARs. Java type metadata only.")
     public String findJavaType(
-            @P(description = "type name, wildcard * or ? supported", name = "typeName") 
+            @P(description = "type name, only * or ? wildcard supported", name = "typeName") 
             String typeName,
-            @P(description = "type package, wildcard * or ? supported", name = "package", required = false) 
+            @P(description = "type package, only * or ? wildcard supported", name = "package", required = false) 
             String pkg,
             @P(name = "projectName", required = false) 
             String projectName) {

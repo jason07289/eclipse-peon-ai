@@ -9,7 +9,6 @@ import org.sterl.llmpeon.streaming.StreamingBridge;
 import org.sterl.llmpeon.tool.component.SmartToolExecutor;
 
 import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.response.ChatResponse;
@@ -29,14 +28,12 @@ public class ToolLoopRequest {
     public final StreamingChatModel chatModel;
     public final StreamingBridge bridge;
 
-    // optional — with defaults
-    public List<ChatMessage> staticMessages = List.of();
-    public List<ChatMessage> userContextInformations = List.of();
-    public UserMessage userMessage = null;
+    /** static messages which do not change */
+    public List<? extends ChatMessage> staticMessages = List.of();
     public AiMonitor monitor = AiMonitor.NULL_MONITOR;
     public Predicate<SmartToolExecutor> toolFilter = t -> true;
     public boolean includeMcpTools = true;
-    public double temperature = 0.8;
+    public Double temperature;
     public Consumer<ChatResponse> onLoop = r -> {};
 
     public ToolLoopRequest(ChatMemory memory, StreamingChatModel chatModel, StreamingBridge bridge) {
@@ -49,18 +46,8 @@ public class ToolLoopRequest {
      * Pure static messages which never change
      * Keep in mind any change to the message history may kill the kv cache!! 
      */
-    public ToolLoopRequest staticMessages(List<ChatMessage> staticMessages) {
+    public ToolLoopRequest staticMessages(List<? extends ChatMessage> staticMessages) {
         this.staticMessages = staticMessages;
-        return this;
-    }
-    
-    public ToolLoopRequest userContextInformations(List<ChatMessage> userContextInformations) {
-        this.userContextInformations = userContextInformations;
-        return this;
-    }
-    
-    public ToolLoopRequest userMessage(UserMessage userMessage) {
-        this.userMessage = userMessage;
         return this;
     }
 
