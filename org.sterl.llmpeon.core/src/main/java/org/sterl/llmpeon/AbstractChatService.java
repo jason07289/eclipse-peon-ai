@@ -108,7 +108,7 @@ public abstract class AbstractChatService {
         }
 
         var start = Instant.now();
-        var staticMessages = buildStaticMessages();
+        var staticMessages = buildStaticMessages(monitor);
         var bridge = new StreamingBridge();
         var response = toolService.executeLoop(
                 new ToolLoopRequest(memory, configuredModel.getChatModel(), bridge)
@@ -162,10 +162,15 @@ public abstract class AbstractChatService {
     public int getContextSize() { return contextTokenSize; }
     public int getAutoCompactAfter() { return configuredModel.getAutoCompactAfter(); }
 
-    private List<ChatMessage> buildStaticMessages() {
+    private List<ChatMessage> buildStaticMessages(AiMonitor monitor) {
         var messages = new ArrayList<ChatMessage>();
         var override = consumeOneShotSystemPrompt();
-        messages.add(SystemMessage.from(override != null ? override : getSystemPrompt()));
+        if (override == null) {
+            messages.add(SystemMessage.from(getSystemPrompt()));
+        } else {
+            monitor.onTool("Using command as system prompt");
+            messages.add(SystemMessage.from(override));
+        }
         messages.addAll(staticContext);
         return messages;
     }

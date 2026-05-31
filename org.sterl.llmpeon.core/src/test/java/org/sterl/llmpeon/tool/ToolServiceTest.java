@@ -79,7 +79,7 @@ class ToolServiceTest {
         verify(cm, times(2)).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
         // AND
         assertThat(memory.messages().get(1)).isEqualTo(aiThinkMsg);
-        assertThat(((UserMessage)memory.messages().get(2)).singleText()).contains("ask a question");
+        assertThat(((UserMessage)memory.messages().get(2)).singleText()).contains("ask a clarifying question");
         assertThat(memory.messages().get(3)).isEqualTo(aiResponse);
         // AND last request contains all our messages
         // 1 is the Hello
