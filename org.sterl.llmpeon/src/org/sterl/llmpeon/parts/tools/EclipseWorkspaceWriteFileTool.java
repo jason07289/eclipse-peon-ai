@@ -91,14 +91,14 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
         ArgsUtil.requireNonBlank(filePath, "filePath");
         ArgsUtil.requireNonNull(content, "content");
 
-        // Try to find existing file first
         var inFile = EclipseUtil.resolveInEclipse(filePath);
         if (inFile.isPresent() && inFile.get() instanceof IFile eclipseFile) {
             var result = writeEclipseFile(eclipseFile, content);
             monitor.onFileUpdate(result);
+            onTool("Updated file " + JdtUtil.pathOf(eclipseFile));
+            return;
         }
 
-        // File doesn't exist - attempt project resolution for new file creation
         var targetProject = EclipseUtil.findOpenProject(filePath);
         String projectRelativePath = java.nio.file.Path.of(filePath).toString();
 
