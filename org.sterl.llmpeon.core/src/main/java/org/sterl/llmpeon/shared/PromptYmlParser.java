@@ -45,8 +45,11 @@ public class PromptYmlParser {
         Map<String, String> frontmatter = parseFrontmatter(commandFile);
         String name = frontmatter.getOrDefault("name", defaultName);
         String description = frontmatter.get("description");
+        String slug = frontmatter.get("slug");
 
-        return new CommandPromptFile(name, description, commandFile);
+        CommandPromptFile cmd = new CommandPromptFile(name, description, commandFile);
+        cmd.setSlug(slug);
+        return cmd;
     }
 
     static Map<String, String> parseFrontmatter(Path file) throws IOException {

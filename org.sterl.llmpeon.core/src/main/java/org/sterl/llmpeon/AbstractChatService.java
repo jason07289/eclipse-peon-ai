@@ -57,6 +57,12 @@ public abstract class AbstractChatService {
      */
     private String oneShotSystemPrompt;
 
+    /**
+     * One-shot command slug for x-litellm-tags header. Set when a slash command is invoked.
+     * The next call to {@link #call(String, AiMonitor)} will inject this as a header and clear the field.
+     */
+    private volatile String oneShotCommandSlug;
+
     protected AbstractChatService(ConfiguredModel configuredModel, ToolService toolService) {
         this.toolService = toolService;
         this.configuredModel = configuredModel;
@@ -96,7 +102,7 @@ public abstract class AbstractChatService {
         monitor.onCallStart(message);
         // auto compress if we are close to full before we start
         if (configuredModel.getAutoCompactAfter() < contextTokenSize) compressContext(monitor);
-        
+
         if (userContextInformations.size() > 0) {
             userContextInformations.stream()
                     .filter(m -> !hasUserText(m))
@@ -107,21 +113,37 @@ public abstract class AbstractChatService {
             memory.add(UserMessage.from(message));
         }
 
-        var start = Instant.now();
-        var staticMessages = buildStaticMessages(monitor);
-        var bridge = new StreamingBridge();
-        var response = toolService.executeLoop(
-                new ToolLoopRequest(memory, configuredModel.getChatModel(), bridge)
-                        .staticMessages(staticMessages)
-                        .monitor(monitor)
-                        .toolFilter(getToolFilter())
-                        .includeMcpTools(includesMcpTools())
-                        .temperature(getTemperature())
-                        .onLoop(this::updateTokenCount));
+        var slug = consumeOneShotCommandSlug();
+        var originalConfig = configuredModel.getConfig();
 
-        updateTokenCount(response);
-        monitor.onCallCompleted(response, Duration.between(start, Instant.now()));
-        return response;
+        if (slug != null) {
+            var headers = new java.util.LinkedHashMap<>(originalConfig.getHeaderParams());
+            headers.put("x-litellm-tags", slug);
+            var tempConfig = originalConfig.toBuilder().headerParams(headers).build();
+            configuredModel.updateConfig(tempConfig);
+        }
+
+        try {
+            var start = Instant.now();
+            var staticMessages = buildStaticMessages(monitor);
+            var bridge = new StreamingBridge();
+            var response = toolService.executeLoop(
+                    new ToolLoopRequest(memory, configuredModel.getChatModel(), bridge)
+                            .staticMessages(staticMessages)
+                            .monitor(monitor)
+                            .toolFilter(getToolFilter())
+                            .includeMcpTools(includesMcpTools())
+                            .temperature(getTemperature())
+                            .onLoop(this::updateTokenCount));
+
+            updateTokenCount(response);
+            monitor.onCallCompleted(response, Duration.between(start, Instant.now()));
+            return response;
+        } finally {
+            if (slug != null) {
+                configuredModel.updateConfig(originalConfig);
+            }
+        }
     }
 
     public ChatResponse compressContext(AiMonitor monitor) {
@@ -190,6 +212,21 @@ public abstract class AbstractChatService {
     private String consumeOneShotSystemPrompt() {
         var value = oneShotSystemPrompt;
         oneShotSystemPrompt = null;
+        return value;
+    }
+
+    /**
+     * Sets a one-shot command slug for x-litellm-tags header. When non-null, the next call to
+     * {@link #call(String, AiMonitor)} will temporarily rebuild the model with this slug in the
+     * headers and restore the original config afterward.
+     */
+    public void setOneShotCommandSlug(String slug) {
+        this.oneShotCommandSlug = (slug == null || slug.isBlank()) ? null : slug;
+    }
+
+    private String consumeOneShotCommandSlug() {
+        var value = oneShotCommandSlug;
+        oneShotCommandSlug = null;
         return value;
     }
 

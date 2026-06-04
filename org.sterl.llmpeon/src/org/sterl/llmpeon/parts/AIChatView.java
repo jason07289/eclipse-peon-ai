@@ -731,6 +731,7 @@ public class AIChatView implements EclipseAiMonitor {
 
         var prompt = command.get().readBody();
         active.setOneShotSystemPrompt(prompt);
+        active.setOneShotCommandSlug(command.get().slug());
         // If only the slash token was entered, keep it visible as the user turn so the chat
         // history clearly shows which command was invoked AND the LLM receives a non-empty turn.
         chatInput.setText(rest.isEmpty() ? "/" + name : rest);

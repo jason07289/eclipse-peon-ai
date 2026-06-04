@@ -22,7 +22,7 @@ import lombok.NoArgsConstructor;
  *
  * <p>Each {@code <name>.md} file directly inside the directory becomes one
  * {@link CommandPromptFile}. Unlike {@link org.sterl.llmpeon.skill.SkillService}, the
- * frontmatter is optional and only the {@code description} field is parsed.
+ * frontmatter is optional and only the {@code description} and {@code slug} fields are parsed.
  * Hidden files and files in subdirectories are ignored.</p>
  */
 @NoArgsConstructor
