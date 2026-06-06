@@ -91,15 +91,22 @@ public abstract class AbstractChatService {
         // auto compress if we are close to full before we start
         if (configuredModel.getAutoCompactAfter() < contextTokenSize) compressContext(monitor);
         
-        var contents = new ArrayList<Content>();
+        var contents = new ArrayList<String>();
         if (userContextInformations.size() > 0) {
             userContextInformations.stream()
                     .filter(m -> !hasUserText(m))
-                    .forEach(m -> contents.add(new TextContent(m)));
+                    .forEach(m -> contents.add(m));
         }
         
-        if (StringUtil.hasValue(message)) contents.add(new TextContent(message));
-        if (!contents.isEmpty()) memory.add(UserMessage.from(contents));
+        if (StringUtil.hasValue(message)) contents.add(message);
+        if (contents.size() == 1) {
+            addMessage(UserMessage.from(contents.getFirst()));
+        } else {
+            var m = contents.stream().map(dev.langchain4j.data.message.TextContent::new)
+                        .map(v -> ((Content)v))
+                        .toList();
+            addMessage(UserMessage.from(m));
+        }
 
         var start = Instant.now();
         var staticMessages = buildStaticMessages(monitor);
@@ -151,7 +158,23 @@ public abstract class AbstractChatService {
         contextTokenSize = 0;
     }
 
-    public void addMessage(ChatMessage message) { memory.add(message); }
+    /**
+     * 1. System-Messages nur am Anfang erlaubt
+     * 2. Tool-Messages NUR nach Assistant-Messages MIT tool_calls erlaubt
+     * 3. Rollen müssen alternieren: user/assistant/user/assistant
+     * 4. Nach User/System darf KEIN Tool kommen!
+     */
+    public void addMessage(ChatMessage message) {
+        synchronized (memory) {
+            if (message instanceof UserMessage num 
+                    && (!memory.messages().isEmpty() && memory.messages().getLast() instanceof UserMessage lum)) {
+                var messages = memory.messages();
+                memory.set(UserMessage.replaceLast(messages, ChatMessageUtil.join(lum, num)));
+            } else {
+                memory.add(message); 
+            }
+        }
+    }
     public List<ChatMessage> getMessages() { return memory.messages(); }
     public int getContextSize() { return contextTokenSize; }
     public int getAutoCompactAfter() { return configuredModel.getAutoCompactAfter(); }

@@ -102,7 +102,7 @@ class PromptYmlParserTest {
         assertThat(skill).isNotNull();
         assertThat(skill.name()).isEqualTo("my-skill");
         assertThat(skill.description()).isEqualTo("Does something useful");
-        assertThat(skill.readBody()).contains("/my-skill/SKILL.md");
+        assertThat(skill.readBody()).contains(Path.of("my-skill", "SKILL.md").toString());
     }
 
     @Test
