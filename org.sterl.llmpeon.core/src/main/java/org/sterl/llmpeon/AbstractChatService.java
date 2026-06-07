@@ -115,24 +115,40 @@ public abstract class AbstractChatService {
             addMessage(UserMessage.from(m));
         }
 
-        var start = Instant.now();
-        var staticMessages = buildStaticMessages(monitor);
-        var response = toolService.executeLoop(
-                ToolLoopRequest.builder()
-                    .memory(memory)
-                    .model(configuredModel)
-                    .staticMessages(staticMessages)
-                    .monitor(monitor)
-                    .toolFilter(getToolFilter())
-                    .includeMcpTools(includesMcpTools())
-                    .temperature(getTemperature())
-                    .onLoop(this::updateTokenCount)
-                    .build()
-                );
+        var slug = consumeOneShotCommandSlug();
+        var originalConfig = configuredModel.getConfig();
 
-        updateTokenCount(response);
-        monitor.onCallCompleted(response, Duration.between(start, Instant.now()));
-        return response;
+        if (slug != null) {
+            var headers = new java.util.LinkedHashMap<>(originalConfig.getHeaderParams());
+            headers.put("x-litellm-tags", slug);
+            var tempConfig = originalConfig.toBuilder().headerParams(headers).build();
+            configuredModel.updateConfig(tempConfig);
+        }
+
+        try {
+            var start = Instant.now();
+            var staticMessages = buildStaticMessages(monitor);
+            var response = toolService.executeLoop(
+                    ToolLoopRequest.builder()
+                        .memory(memory)
+                        .model(configuredModel)
+                        .staticMessages(staticMessages)
+                        .monitor(monitor)
+                        .toolFilter(getToolFilter())
+                        .includeMcpTools(includesMcpTools())
+                        .temperature(getTemperature())
+                        .onLoop(this::updateTokenCount)
+                        .build()
+                    );
+
+            updateTokenCount(response);
+            monitor.onCallCompleted(response, Duration.between(start, Instant.now()));
+            return response;
+        } finally {
+            if (slug != null) {
+                configuredModel.updateConfig(originalConfig);
+            }
+        }
     }
 
     public ChatResponse compressContext(AiMonitor monitor) {
