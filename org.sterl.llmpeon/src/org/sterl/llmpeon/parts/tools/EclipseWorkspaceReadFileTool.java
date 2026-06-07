@@ -30,7 +30,7 @@ public class EclipseWorkspaceReadFileTool extends AbstractEclipseTool {
         return false;
     }
 
-    @Tool("Eclipse: Open a workspace file in the Eclipse editor to show it to the user e.g. a plan or summary.")
+    @Tool("Eclipse: Open a workspace file, not directory, in the Eclipse editor to show it to the user e.g. a plan or summary.")
     public String openFileInEclipseEditor(@P(description = "workspace-relative path", name = "filePath") String filePath) {
         ArgsUtil.requireNonBlank(filePath, "filePath");
         var resource = EclipseUtil.resolveInEclipse(filePath);
