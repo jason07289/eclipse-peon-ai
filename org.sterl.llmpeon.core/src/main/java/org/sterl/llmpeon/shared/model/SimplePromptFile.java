@@ -20,7 +20,8 @@ public class SimplePromptFile {
     protected final Path promptFile;
     @Default
     protected volatile boolean enabled = true;
-    
+    private String slug;
+
     private String shortInfo; // Lazy-init with double-checked locking for thread safety
     
     public String buildShortInfo() {
@@ -46,6 +47,14 @@ public class SimplePromptFile {
 
     public String description() {
         return getDescription();
+    }
+
+    public String slug() {
+        return slug;
+    }
+
+    public void setSlug(String slug) {
+        this.slug = slug;
     }
 
     public Path promptFile() {

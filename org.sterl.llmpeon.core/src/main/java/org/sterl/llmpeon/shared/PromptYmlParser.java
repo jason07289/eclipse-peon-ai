@@ -28,8 +28,13 @@ public class PromptYmlParser {
         var frontmatter = parseFrontmatter(commandFile);
         String name = frontmatter.getOrDefault("name", defaultSkillName(commandFile));
         String description = frontmatter.getOrDefault("description", null);
+        String slug = frontmatter.get("slug");
 
-        return new SimplePromptFile(name, description, commandFile);
+        var cmd = new SimplePromptFile(name, description, commandFile);
+        if (slug != null) {
+            cmd.setSlug(slug);
+        }
+        return cmd;
     }
 
     private static Map<String, String> parseFrontmatter(Path file) throws IOException {

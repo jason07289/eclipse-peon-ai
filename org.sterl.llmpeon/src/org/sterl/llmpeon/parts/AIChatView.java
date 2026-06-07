@@ -739,6 +739,7 @@ public class AIChatView implements EclipseAiMonitor {
         if (command.isPresent()) {
             var prompt = command.get().readBody();
             active.setOneShotSystemPrompt(prompt);
+            active.setOneShotCommandSlug(command.get().slug());
         } else {
             var skillService = aiService.getSkillService();
             var skill = skillService.get(name);
