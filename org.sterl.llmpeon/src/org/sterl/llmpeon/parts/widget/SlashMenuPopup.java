@@ -41,6 +41,7 @@ public class SlashMenuPopup {
     private final Composite anchor;
     private final Consumer<SimplePromptFile> onSelect;
     private final Listener anchorShellMoveListener;
+    private final Listener anchorShellDeactivateListener;
     private final Shell anchorShell;
 
     private Shell popup;
@@ -48,6 +49,8 @@ public class SlashMenuPopup {
     private List<SimplePromptFile> filtered = List.of();
     private List<SimplePromptFile> source = List.of();
     private String currentPrefix = "";
+    private Listener popupCloseMouseListener;
+    private boolean popupCloseFilterRegistered = false;
 
     public SlashMenuPopup(Composite anchor, Consumer<SimplePromptFile> onSelect) {
         this.anchor = anchor;
@@ -56,8 +59,20 @@ public class SlashMenuPopup {
         this.anchorShellMoveListener = event -> {
             if (isOpen()) hide();
         };
+        this.anchorShellDeactivateListener = event -> {
+            if (!isOpen()) return;
+            // Skip closing if the cursor is currently over the popup itself —
+            // some platforms fire Deactivate on parent Shell when TOOL child is clicked
+            Control c = anchorShell.getDisplay().getCursorControl();
+            while (c != null) {
+                if (c == popup) return;
+                c = c.getParent();
+            }
+            hide();
+        };
         anchorShell.addListener(SWT.Move, anchorShellMoveListener);
         anchorShell.addListener(SWT.Resize, anchorShellMoveListener);
+        anchorShell.addListener(SWT.Deactivate, anchorShellDeactivateListener);
 
         anchor.addDisposeListener(e -> {
             if (!anchorShell.isDisposed()) {
@@ -93,6 +108,25 @@ public class SlashMenuPopup {
         rebuildItems();
         layoutAt(anchorScreen);
         popup.setVisible(true);
+
+        // Register mouse listener to close popup when clicking outside (anywhere on screen)
+        var display = Display.getDefault();
+        if (popupCloseMouseListener == null) {
+            popupCloseMouseListener = event -> {
+                if (isOpen() && event.widget instanceof org.eclipse.swt.widgets.Control control && !control.isDisposed()) {
+                    // Convert event coordinates (widget-relative) to display coordinates
+                    Point clickPoint = control.toDisplay(event.x, event.y);
+                    if (!popup.getBounds().contains(clickPoint)) {
+                        hide();
+                    }
+                }
+            };
+        }
+        // Register/re-register filter each time popup is shown
+        if (!popupCloseFilterRegistered && display != null && !display.isDisposed()) {
+            display.addFilter(SWT.MouseDown, popupCloseMouseListener);
+            popupCloseFilterRegistered = true;
+        }
     }
 
     /** Updates the prefix filter while the popup is visible. */
@@ -138,6 +172,19 @@ public class SlashMenuPopup {
         popup = null;
         table = null;
         filtered = List.of();
+
+        // Unregister mouse listener from Display
+        if (popupCloseFilterRegistered && popupCloseMouseListener != null) {
+            try {
+                var display = Display.getDefault();
+                if (display != null && !display.isDisposed()) {
+                    display.removeFilter(SWT.MouseDown, popupCloseMouseListener);
+                }
+            } catch (Exception e) {
+                // Display might be disposed, ignore
+            }
+            popupCloseFilterRegistered = false;
+        }
     }
 
     private void ensurePopup() {
@@ -156,6 +203,19 @@ public class SlashMenuPopup {
         var colDesc = new TableColumn(table, SWT.LEFT);
         colDesc.setWidth(MAX_WIDTH - 164);
 
+        // Single click to select, click again on selected item to confirm
+        table.addListener(SWT.MouseDown, e -> {
+            var item = table.getItem(new org.eclipse.swt.graphics.Point(e.x, e.y));
+            if (item != null) {
+                var index = table.indexOf(item);
+                var currentSelection = table.getSelectionIndex();
+                if (index == currentSelection) {
+                    commitSelection();
+                } else {
+                    table.setSelection(index);
+                }
+            }
+        });
         table.addListener(SWT.MouseDoubleClick, e -> commitSelection());
         table.addListener(SWT.DefaultSelection, e -> commitSelection());
 
@@ -225,6 +285,7 @@ public class SlashMenuPopup {
         if (!anchorShell.isDisposed()) {
             anchorShell.removeListener(SWT.Move, anchorShellMoveListener);
             anchorShell.removeListener(SWT.Resize, anchorShellMoveListener);
+            anchorShell.removeListener(SWT.Deactivate, anchorShellDeactivateListener);
         }
         hide();
     }
