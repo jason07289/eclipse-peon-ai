@@ -49,7 +49,6 @@ import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.parts.shared.SimpleDiff;
 import org.sterl.llmpeon.parts.tools.AskUserTool;
 import org.sterl.llmpeon.parts.tools.EclipseCodeNavigationTool;
-import org.sterl.llmpeon.parts.tools.memory.WorkspaceMemoryTool;
 import org.sterl.llmpeon.parts.widget.ActionsBarWidget;
 import org.sterl.llmpeon.parts.widget.ChatMarkdownWidget;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget;
@@ -94,8 +93,7 @@ public class AIChatView implements EclipseAiMonitor {
 
     private final AtomicReference<IProgressMonitor> monitorRef = new AtomicReference<>(new NullProgressMonitor());
     private final VoiceInputService voiceService = new VoiceInputService();
-    private final WorkspaceMemoryTool workspaceMemoryTool = WorkspaceMemoryTool.getInstance();
-    
+
     private volatile boolean recording = false;
 
     private AtomicReference<LlmConfig> lastListedConfig = new AtomicReference<>();
@@ -114,7 +112,6 @@ public class AIChatView implements EclipseAiMonitor {
     
     private final StandingOrdersBuilder standingOrders = new StandingOrdersBuilder()
             .add(aiService)
-            .add(workspaceMemoryTool)
             .add(aiService.getAgentsMdService())
             .add(userContext);
 
@@ -180,8 +177,6 @@ public class AIChatView implements EclipseAiMonitor {
             (question, answers, onAnswer) -> showQuestion(question, answers, onAnswer)
         ));
 
-        aiService.getToolService().addTool(workspaceMemoryTool);
-        
         var dateInfo = "Today: " + LocalDate.now() 
                 + " — APIs and libraries may have changed since your training cutoff. "
                 + "Don't rely only on internal API knowledge — explore base classes and libs if possible with e.g. using "
