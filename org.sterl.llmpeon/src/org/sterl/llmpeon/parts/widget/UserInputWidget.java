@@ -80,11 +80,11 @@ public class UserInputWidget extends Composite {
         textInput.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         textInput.setTextBackground(bgWhite);
 
-        // Ctrl/Cmd+Enter sends; plain Enter inserts newline
+        // Enter sends; Shift+Enter inserts newline
         textInput.addKeyListener(KeyListener.keyPressedAdapter(e -> {
             if (e.keyCode == SWT.CR || e.keyCode == SWT.LF) {
-                boolean send = (e.stateMask & SWT.CTRL) != 0 || (e.stateMask & SWT.COMMAND) != 0;
-                if (send) {
+                boolean isShiftPressed = (e.stateMask & SWT.SHIFT) != 0;
+                if (!isShiftPressed) {
                     e.doit = false;
                     onSend.run();
                 }
@@ -114,8 +114,8 @@ public class UserInputWidget extends Composite {
             case SWT.CR:
             case SWT.LF:
             case SWT.KEYPAD_CR:
-                // Plain Enter commits the selection; Ctrl/Cmd+Enter still sends the message.
-                if ((e.stateMask & (SWT.CTRL | SWT.COMMAND)) == 0) {
+                // Plain Enter commits the selection; Shift+Enter inserts newline.
+                if ((e.stateMask & SWT.SHIFT) == 0) {
                     if (slashPopup.commitSelection()) e.doit = false;
                 }
                 break;
@@ -142,7 +142,7 @@ public class UserInputWidget extends Composite {
             e.gc.fillRectangle(rightColumn.getClientArea());
         });
 
-        sendButton = SwtUtil.createIconButton(rightColumn, sendImage, "Send (Ctrl+Enter)");
+        sendButton = SwtUtil.createIconButton(rightColumn, sendImage, "Send (Enter)");
         sendButton.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, false, true));
         sendButton.addListener(SWT.Selection, e -> {
             if (working) onStop.run();
@@ -214,7 +214,7 @@ public class UserInputWidget extends Composite {
             sendButton.setToolTipText("Cancel current request");
         } else {
             sendButton.setImage(sendImage);
-            sendButton.setToolTipText("Send (Ctrl+Enter)");
+            sendButton.setToolTipText("Send (Enter)");
         }
         sendButton.redraw();
     }
