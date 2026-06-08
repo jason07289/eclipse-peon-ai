@@ -193,12 +193,7 @@ public class AIChatView implements EclipseAiMonitor {
         aiService.getDeveloperService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
         aiService.getPlannerService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
 
-        chatInput.enableSlashCommands(() -> {
-            var result = new ArrayList<SimplePromptFile>();
-            result.addAll(aiService.getCommandService().getCommands());
-            result.addAll(aiService.getSkillService().getSkills());
-            return result;
-        });
+        chatInput.enableSlashCommands(() -> aiService.getCommandService().getCommands());
     }
 
     private void onClear() {
@@ -741,18 +736,11 @@ public class AIChatView implements EclipseAiMonitor {
             active.setOneShotSystemPrompt(prompt);
             active.setOneShotCommandSlug(command.get().slug());
         } else {
-            var skillService = aiService.getSkillService();
-            var skill = skillService.get(name);
-            if (skill.isPresent()) {
-                standingOrders.addOneTimeOrder(skill.get().readBody() + "\n\nExecute this skill on the following instruction - full body was loaded.");
-            } else {
-                if (!commandService.hasCommands() && !skillService.hasSkills()) return;
-                var available = commandService.commandNames() + ", " + skillService.skillNames();
-                chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
-                        "Unknown command or SKILL /" + name + ". Available " + available));
-                
-                return;
-            }
+            if (!commandService.hasCommands()) return;
+            var available = commandService.commandNames();
+            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                    "Unknown command /" + name + ". Available: " + available));
+            return;
         }
         // If only the slash token was entered, keep it visible as the user turn so the chat
         // history clearly shows which command was invoked AND the LLM receives a non-empty turn.

@@ -172,7 +172,14 @@ public class SlashMenuPopup {
         for (var cmd : filtered) {
             var item = new TableItem(table, SWT.NONE);
             item.setText(0, "/" + cmd.name());
-            item.setText(1, cmd instanceof SkillPromptFile ? "SKILL" : "Command (replace system message)");
+            String desc = cmd.description();
+            if (desc != null && !desc.isBlank()) {
+                item.setText(1, desc);
+            } else if (cmd instanceof SkillPromptFile) {
+                item.setText(1, "SKILL");
+            } else {
+                item.setText(1, "Command (replace system message)");
+            }
             // optionally mute the description color:
             item.setForeground(1, table.getDisplay().getSystemColor(SWT.COLOR_DARK_GRAY));
         }
