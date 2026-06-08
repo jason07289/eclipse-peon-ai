@@ -43,6 +43,7 @@ public class UserInputWidget extends Composite {
 
     private SlashMenuPopup slashPopup;
     private Supplier<List<SimplePromptFile>> commandSupplier;
+    private boolean slashPopupWasOpen = false;
 
     public UserInputWidget(Composite parent, int style, Runnable onSend, Runnable onStop, Runnable onMicClick) {
         super(parent, style);
@@ -80,15 +81,17 @@ public class UserInputWidget extends Composite {
         textInput.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         textInput.setTextBackground(bgWhite);
 
-        // Enter sends; Shift+Enter inserts newline
+        // Enter sends; Shift+Enter inserts newline. While the slash popup is open,
+        // defer to the VerifyKeyListener below so Enter commits the selection instead.
         textInput.addKeyListener(KeyListener.keyPressedAdapter(e -> {
             if (e.keyCode == SWT.CR || e.keyCode == SWT.LF) {
                 boolean isShiftPressed = (e.stateMask & SWT.SHIFT) != 0;
-                if (!isShiftPressed) {
+                if (!isShiftPressed && !slashPopupWasOpen) {
                     e.doit = false;
                     onSend.run();
                 }
             }
+            slashPopupWasOpen = false;  // reset for next key event
         }));
 
         // Refresh the slash popup on every modification so it tracks the current prefix.
@@ -116,6 +119,7 @@ public class UserInputWidget extends Composite {
             case SWT.KEYPAD_CR:
                 // Plain Enter commits the selection; Shift+Enter inserts newline.
                 if ((e.stateMask & SWT.SHIFT) == 0) {
+                    slashPopupWasOpen = true;  // mark before commitSelection closes the popup
                     if (slashPopup.commitSelection()) e.doit = false;
                 }
                 break;
