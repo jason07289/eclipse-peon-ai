@@ -120,6 +120,33 @@
             opacity: 1;
         }
 
+        /* Tables */
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 8px 0;
+            font-size: 13px;
+            display: block;
+            overflow-x: auto;
+        }
+
+        th, td {
+            border: 1px solid #e0e0e0;
+            padding: 6px 10px;
+            text-align: left;
+            vertical-align: top;
+            word-break: break-word;
+        }
+
+        th {
+            background: #f6f8fa;
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) td {
+            background: #f6f8fa;
+        }
+
         @keyframes blink-cursor {
             0%, 100% { opacity: 1; }
             50%       { opacity: 0; }
