@@ -6,8 +6,12 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.Properties;
+import java.util.Set;
 
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.Platform;
@@ -54,8 +58,8 @@ public class PeonUpdateService {
             String manifestJson = fetchUrl(updateUrl + "/manifest.json");
             JsonNode manifest = MAPPER.readTree(manifestJson);
 
-            String version = manifest.get("version").asText("");
-            boolean prefEnabled = manifest.get("pref").asBoolean(false);
+            String version = manifest.path("version").asText("");
+            boolean prefEnabled = manifest.path("pref").asBoolean(false);
 
             double remoteVersion = parseVersion(version);
             double localVersion = parseVersion(prefs.get(PeonConstants.PREF_SETTINGS_VERSION, ""));
@@ -64,28 +68,24 @@ public class PeonUpdateService {
                 return Result.NO_UPDATE_NEEDED;
             }
 
-            if (!prefEnabled) {
-                LOG.info("Peon update available but pref=false. Version: " + version);
-                return Result.NO_UPDATE_NEEDED;
+            if (prefEnabled) {
+                try {
+                    String prefsFile = fetchUrl(updateUrl + "/org.sterl.llmpeon.prefs");
+                    Properties remotePrefs = new Properties();
+                    remotePrefs.load(new StringReader(prefsFile));
+
+                    for (String key : remotePrefs.stringPropertyNames()) {
+                        if (shouldSkipKey(key)) continue;
+                        String value = remotePrefs.getProperty(key);
+                        prefs.put(key, value);
+                        LOG.info("Applied preference: " + key + " = " + value);
+                    }
+                } catch (IOException e) {
+                    LOG.warn("Prefs file not found at " + updateUrl + "/org.sterl.llmpeon.prefs", e);
+                }
             }
 
-            String prefsFile;
-            try {
-                prefsFile = fetchUrl(updateUrl + "/org.sterl.llmpeon.prefs");
-            } catch (IOException e) {
-                LOG.warn("Prefs file not found at " + updateUrl + "/org.sterl.llmpeon.prefs", e);
-                return Result.NO_UPDATE_NEEDED;
-            }
-
-            Properties remotePrefs = new Properties();
-            remotePrefs.load(new StringReader(prefsFile));
-
-            for (String key : remotePrefs.stringPropertyNames()) {
-                if (shouldSkipKey(key)) continue;
-                String value = remotePrefs.getProperty(key);
-                prefs.put(key, value);
-                LOG.info("Applied preference: " + key + " = " + value);
-            }
+            syncFiles(updateUrl, manifest);
 
             prefs.put(PeonConstants.PREF_SETTINGS_VERSION, version);
             prefs.flush();
@@ -146,5 +146,68 @@ public class PeonUpdateService {
             url = url.substring(0, url.length() - 1);
         }
         return url;
+    }
+
+    private static void syncFiles(String updateUrl, JsonNode manifest) {
+        var filesNode = manifest.path("files");
+        if (!filesNode.isArray()) return;
+
+        var commandFiles = new HashSet<String>();
+        var skillFiles = new HashSet<String>();
+
+        for (var node : filesNode) {
+            String path = node.asText("");
+            if (path.startsWith("commands/")) {
+                commandFiles.add(path.substring("commands/".length()));
+            } else if (path.startsWith("skills/")) {
+                skillFiles.add(path.substring("skills/".length()));
+            } else if (!path.isBlank()) {
+                LOG.warn("Skipping unknown manifest file path: " + path);
+            }
+        }
+
+        var config = LlmPreferenceInitializer.buildWithDefaults();
+        syncDirectory(updateUrl, "commands", config.getCommandDirectory(), commandFiles);
+        syncDirectory(updateUrl, "skills", config.getSkillDirectory(), skillFiles);
+    }
+
+    private static void syncDirectory(String updateUrl, String remotePrefix, String localDir,
+            Set<String> expectedRelPaths) {
+        if (localDir == null || localDir.isBlank()) return;
+        var root = Path.of(localDir);
+
+        // 1) 미러 삭제: localDir 안의 .md 파일 중 expectedRelPaths에 없는 것 삭제
+        if (Files.isDirectory(root)) {
+            try (var stream = Files.walk(root)) {
+                stream.filter(Files::isRegularFile)
+                      .filter(p -> p.toString().endsWith(".md"))
+                      .forEach(p -> {
+                          var rel = root.relativize(p).toString().replace('\\', '/');
+                          if (!expectedRelPaths.contains(rel)) {
+                              try {
+                                  Files.delete(p);
+                                  LOG.info("Removed file no longer in manifest: " + p);
+                              } catch (IOException e) {
+                                  LOG.warn("Failed to delete " + p, e);
+                              }
+                          }
+                      });
+            } catch (IOException e) {
+                LOG.warn("Failed to scan directory " + root, e);
+            }
+        }
+
+        // 2) 다운로드/덮어쓰기
+        for (String rel : expectedRelPaths) {
+            try {
+                String content = fetchUrl(updateUrl + "/" + remotePrefix + "/" + rel);
+                var target = root.resolve(rel);
+                Files.createDirectories(target.getParent());
+                Files.writeString(target, content);
+                LOG.info("Synced " + remotePrefix + "/" + rel + " -> " + target);
+            } catch (IOException e) {
+                LOG.warn("Failed to download " + remotePrefix + "/" + rel, e);
+            }
+        }
     }
 }
