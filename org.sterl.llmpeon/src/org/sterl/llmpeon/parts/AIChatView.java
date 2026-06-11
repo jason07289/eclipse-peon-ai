@@ -20,6 +20,7 @@ import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences.IPreferenceChangeListener;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.e4.ui.di.Focus;
@@ -42,6 +43,7 @@ import org.sterl.llmpeon.StandingOrdersBuilder;
 import org.sterl.llmpeon.ai.LlmConfig;
 import org.sterl.llmpeon.parts.config.LlmPreferenceInitializer;
 import org.sterl.llmpeon.parts.config.McpPreferenceInitializer;
+import org.sterl.llmpeon.parts.config.PeonUpdateService;
 import org.sterl.llmpeon.parts.config.VoicePreferenceInitializer;
 import org.sterl.llmpeon.parts.model.UserContext;
 import org.sterl.llmpeon.parts.monitor.EclipseAiMonitor;
@@ -120,11 +122,21 @@ public class AIChatView implements EclipseAiMonitor {
         this.parent = parent;
         parent.setLayout(new GridLayout(1, false));
 
+        createChatHistoryWidget(parent);
+        createInputArea(parent);
+        createActionBars();
+
+        registerPreferenceListener();
+        loadInitialConfig();
+        initToolsAndContext();
+    }
+
+    private void createChatHistoryWidget(Composite parent) {
         chatHistory = new ChatMarkdownWidget(parent, SWT.BORDER);
         chatHistory.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+    }
 
-        // inputBlock carries the single outer border for the entire input area (sections 2+3+4).
-        // No background manipulation needed — SWT native widgets render their own correct backgrounds.
+    private void createInputArea(Composite parent) {
         inputBlock = new Composite(parent, SWT.BORDER);
         GridLayout inputBlockLayout = new GridLayout(1, false);
         inputBlockLayout.marginWidth = 0;
@@ -144,7 +156,9 @@ public class AIChatView implements EclipseAiMonitor {
         qgd.exclude = true;
         questionWidget.setLayoutData(qgd);
         questionWidget.setVisible(false);
+    }
 
+    private void createActionBars() {
         actionsBar = new ActionsBarWidget(inputBlock, SWT.NONE,
             this::onClear,
             this::doStartImpl,
@@ -161,34 +175,44 @@ public class AIChatView implements EclipseAiMonitor {
             this::onAgentsMdToggle,
             this::doCompressContext
         );
+    }
 
+    private void registerPreferenceListener() {
+        var prefs = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
+        prefs.addPreferenceChangeListener(prefListener);
+    }
+
+    private void loadInitialConfig() {
+        checkForUpdates();
+        applyConfig();
         statusLine.setSkillsMenuHandler(
             () -> aiService.getSkillService().getAllLoadedSkills(),
             this::onSkillMenuSelection
         );
+    }
 
-        applyConfig();
-
-        var prefs = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
-        prefs.addPreferenceChangeListener(prefListener);
+    private void initToolsAndContext() {
         updateSelectedProject(EclipseUtil.firstOpenOrSelectedProject());
 
         aiService.getToolService().addTool(new AskUserTool(
             (question, answers, onAnswer) -> showQuestion(question, answers, onAnswer)
         ));
 
-        var dateInfo = "Today: " + LocalDate.now() 
+        var dateInfo = buildDateInfo();
+        aiService.getDeveloperService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
+        aiService.getPlannerService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
+
+        chatInput.enableSlashCommands(() -> aiService.getCommandService().getCommands());
+    }
+
+    private String buildDateInfo() {
+        return "Today: " + LocalDate.now()
                 + " — APIs and libraries may have changed since your training cutoff. "
                 + "Don't rely only on internal API knowledge — explore base classes and libs if possible with e.g. using "
                 + EclipseCodeNavigationTool.GET_TYPE_SOURCE + " for java."
                 + "\nos.name: " + System.getProperty("os.name")
                 + "\nos file.separator: '" + System.getProperty("file.separator") + "'"
                 + "\nos line.separator: '" + System.lineSeparator() + "'";
-
-        aiService.getDeveloperService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
-        aiService.getPlannerService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
-
-        chatInput.enableSlashCommands(() -> aiService.getCommandService().getCommands());
     }
 
     private void onClear() {
@@ -204,6 +228,26 @@ public class AIChatView implements EclipseAiMonitor {
         InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID).removePreferenceChangeListener(prefListener);
         aiService.disconnectMcp();
         voiceService.close();
+    }
+
+    private void checkForUpdates() {
+        try {
+            var result = PeonUpdateService.checkForUpdate();
+            if (result == PeonUpdateService.Result.UNREACHABLE || result == PeonUpdateService.Result.NO_UPDATE_NEEDED) {
+                LOG.warn("Peon update check result: " + result);
+            }
+        } catch (Exception e) {
+            var updateUrl = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID)
+                    .get(PeonConstants.PREF_UPDATE_URL, "");
+            LOG.warn("Error checking for Peon AI updates. URL: " + updateUrl, e);
+            if (StringUtil.hasValue(updateUrl)) {
+                MessageDialog.openWarning(parent.getShell(),
+                        "Peon AI Update",
+                        "Update URL이 유효하지 않거나 연결할 수 없습니다.\n" +
+                        "URL: " + updateUrl + "\n" +
+                        "에러: " + e.getMessage());
+            }
+        }
     }
 
     @Focus

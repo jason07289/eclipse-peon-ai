@@ -2,6 +2,7 @@ package org.sterl.llmpeon.parts.config;
 
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.jface.preference.BooleanFieldEditor;
 import org.eclipse.jface.preference.ComboFieldEditor;
 import org.eclipse.jface.preference.FieldEditorPreferencePage;
@@ -11,6 +12,7 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionListener;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.program.Program;
+import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Link;
 import org.eclipse.ui.IWorkbench;
@@ -80,6 +82,8 @@ public class AiConfigPreferenceView extends FieldEditorPreferencePage implements
 
         addField(new StringFieldEditor(PeonConstants.PREF_SKILL_DIRECTORY, "Skills directory:", getFieldEditorParent()));
         addField(new StringFieldEditor(PeonConstants.PREF_COMMAND_DIRECTORY, "Commands directory:", getFieldEditorParent()));
+        addField(new StringFieldEditor(PeonConstants.PREF_UPDATE_URL, "Update URL:", getFieldEditorParent()));
+        buildSettingsVersionLabel();
 
         // -- Debug stuff
         addField(new BooleanFieldEditor(PeonConstants.PREF_LOG_RESPONSE, "Debug mode (logs requests & responses)", getFieldEditorParent()));
@@ -118,6 +122,18 @@ public class AiConfigPreferenceView extends FieldEditorPreferencePage implements
                 MessageDialog.openError(getShell(), "Host Check", "Cannot reach:\n" + urlValue);
             }
         });
+    }
+
+    private void buildSettingsVersionLabel() {
+        IEclipsePreferences prefs = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
+        String version = prefs.get(PeonConstants.PREF_SETTINGS_VERSION, "");
+
+        Label label = new Label(getFieldEditorParent(), SWT.NONE);
+        label.setText("Settings version:");
+
+        Label valueLabel = new Label(getFieldEditorParent(), SWT.NONE);
+        valueLabel.setText(version.isBlank() ? "-" : version);
+        valueLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
     }
 
     private void buildGithubLogin() {

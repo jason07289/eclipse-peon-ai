@@ -17,6 +17,8 @@ public interface PeonConstants {
     String PREF_API_KEY                    = "llm.apiKey";
     String PREF_SKILL_DIRECTORY            = "llm.skillDirectory";
     String PREF_COMMAND_DIRECTORY          = "llm.commandDirectory";
+    String PREF_UPDATE_URL                 = "llm.updateUrl";
+    String PREF_SETTINGS_VERSION           = "llm.settingsVersion";
     String PREF_DISK_TOOLS_ENABLED         = "llm.diskToolsEnabled";
     String PREF_SHELL_CONFIRMATION_ENABLED = "llm.shellConfirmationEnabled";
     
