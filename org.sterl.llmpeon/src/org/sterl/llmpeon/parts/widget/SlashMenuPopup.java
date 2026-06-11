@@ -276,7 +276,7 @@ public class SlashMenuPopup {
         if (prefix == null || prefix.isEmpty()) return source;
         var lower = prefix.toLowerCase(Locale.ROOT);
         return source.stream()
-                .filter(c -> c.name().toLowerCase(Locale.ROOT).startsWith(lower))
+                .filter(c -> c.name().toLowerCase(Locale.ROOT).contains(lower))
                 .toList();
     }
 
