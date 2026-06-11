@@ -233,20 +233,19 @@ public class AIChatView implements EclipseAiMonitor {
     private void checkForUpdates() {
         try {
             var result = PeonUpdateService.checkForUpdate();
-            if (result == PeonUpdateService.Result.UNREACHABLE || result == PeonUpdateService.Result.NO_UPDATE_NEEDED) {
-                LOG.warn("Peon update check result: " + result);
-            }
-        } catch (Exception e) {
             var updateUrl = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID)
                     .get(PeonConstants.PREF_UPDATE_URL, "");
-            LOG.warn("Error checking for Peon AI updates. URL: " + updateUrl, e);
-            if (StringUtil.hasValue(updateUrl)) {
+            if (result == PeonUpdateService.Result.UNREACHABLE) {
                 MessageDialog.openWarning(parent.getShell(),
                         "Peon AI Update",
-                        "Update URL이 유효하지 않거나 연결할 수 없습니다.\n" +
-                        "URL: " + updateUrl + "\n" +
-                        "에러: " + e.getMessage());
+                        "Update URL에 연결할 수 없습니다. Preferences에서 Update URL 설정을 확인해주세요.\n" + updateUrl);
+            } else if (result == PeonUpdateService.Result.INVALID_URL) {
+                MessageDialog.openWarning(parent.getShell(),
+                        "Peon AI Update",
+                        "Update URL 형식이 올바르지 않습니다. Preferences에서 Update URL 설정을 확인해주세요.\n" + updateUrl);
             }
+        } catch (Exception e) {
+            LOG.warn("Error checking for Peon AI updates", e);
         }
     }
 

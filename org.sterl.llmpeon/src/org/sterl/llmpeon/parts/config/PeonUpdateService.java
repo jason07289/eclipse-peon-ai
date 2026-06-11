@@ -3,6 +3,7 @@ package org.sterl.llmpeon.parts.config;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -24,7 +25,7 @@ public class PeonUpdateService {
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(5);
 
     public enum Result {
-        NO_UPDATE_URL, UNREACHABLE, NO_UPDATE_NEEDED, UPDATED
+        NO_UPDATE_URL, INVALID_URL, UNREACHABLE, NO_UPDATE_NEEDED, UPDATED
     }
 
     public static Result checkForUpdate() {
@@ -36,6 +37,18 @@ public class PeonUpdateService {
         }
 
         updateUrl = removeTrailingSlash(updateUrl);
+
+        URI baseUri;
+        try {
+            baseUri = URI.create(updateUrl);
+        } catch (IllegalArgumentException e) {
+            LOG.warn("Invalid update URL: " + updateUrl, e);
+            return Result.INVALID_URL;
+        }
+        if (baseUri.getScheme() == null || baseUri.getHost() == null) {
+            LOG.warn("Invalid update URL (missing scheme or host): " + updateUrl);
+            return Result.INVALID_URL;
+        }
 
         try {
             String manifestJson = fetchUrl(updateUrl + "/manifest.json");
