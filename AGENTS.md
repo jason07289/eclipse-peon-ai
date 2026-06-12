@@ -1,8 +1,7 @@
 # Spec driven development
-The `doc/docs/design` contains the application design. The `HOW`. use this as a system reference.
-The other `doc/docs` folder contain the user documentation.
-
-During the plan mode always plan also an update to the design and documentation.
+The `doc/design` contains the application design. The `HOW`. use this as a system reference.
+Don't link it to the vitepress.
+During the plan mode always plan also an update to the design.
 
 # Global Rules
 
@@ -35,7 +34,6 @@ Read these when working in specific modules:
 - Platform-provided JARs (jakarta, osgi, jna, asm, jetty, felix, etc.) must NOT be in `lib` - they come from the target platform
 
 # Docs
-
+- plan also the doc changes for  the user of the plugin - it should be short and explain how to use it.
 - `doc/docs` - VitePress defining the docs and spec of the project
 - Always update `/doc/.vitepress/config.ts` sidebar/nav when adding new pages to `docs/`
-- Docs: canonical interaction-design.md lives in `design/`; user docs go in `usage/`. Use tooltips for hidden behavior hints.
