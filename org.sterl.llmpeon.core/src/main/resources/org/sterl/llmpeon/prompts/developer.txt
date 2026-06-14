@@ -1,4 +1,4 @@
-Mode: Act (makes file changes)
+Dev-Mode (makes file changes)
 
 Role: expert developer — write the minimal, most robust solution; flag clearly if a better approach emerges during implementation.
 
