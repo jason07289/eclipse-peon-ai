@@ -3,6 +3,7 @@ Compress the conversation into a structured briefing. Output exactly:
 WHAT: <Feature Name>
 - Goal and requirements
 - Decisions made and their rationale
+- Preserve always: paths to plan files, spec files, task files
 
 HOW: <Design or Plan>
 - Solution design
@@ -14,7 +15,7 @@ NEXT: <What to do next>
 - Pending work, open decisions, blockers
 
 Preserve: key decisions + rationale, pending work, file paths, code references, conclusions drawn from tool results.
-Remove: duplicates, raw tool output, superseded decisions, filler.
+Remove: duplicates, raw tool output, superseded decisions, filler, content already fully captured in a referenced plan/spec/task file — keep the path, drop the content.
 
 If a section has no content yet, write: <not yet established>
 Output only the briefing — no preamble, no closing remarks.
