@@ -148,6 +148,43 @@
             background: #f6f8fa;
         }
 
+        .message.diff table {
+            display: table;
+            margin: 0;
+            font-size: 13px;
+            overflow-x: visible;
+        }
+
+        .message.diff th,
+        .message.diff td {
+            border: none;
+            padding: 0;
+            word-break: normal;
+        }
+
+        .message.diff th,
+        .message.diff tr:nth-child(even) td {
+            background: inherit;
+        }
+
+        .message.diff .d2h-ins,
+        .message.diff tr.d2h-ins td,
+        .message.diff tr.d2h-ins .d2h-code-linenumber {
+            background-color: var(--d2h-ins-bg-color) !important;
+        }
+
+        .message.diff .d2h-del,
+        .message.diff tr.d2h-del td,
+        .message.diff tr.d2h-del .d2h-code-linenumber {
+            background-color: var(--d2h-del-bg-color) !important;
+        }
+
+        .message.diff .d2h-info,
+        .message.diff tr.d2h-info td,
+        .message.diff tr.d2h-info .d2h-code-linenumber {
+            background-color: var(--d2h-info-bg-color) !important;
+        }
+
         @keyframes blink-cursor {
             0%, 100% { opacity: 1; }
             50%       { opacity: 0; }
