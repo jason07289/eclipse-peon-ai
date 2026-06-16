@@ -86,7 +86,7 @@ public class EclipseGrepTool extends AbstractEclipseTool {
             suffix = "... result capped at " + MAX_FILES + " files. Narrow your search path.";
         }
         return AiReponseBuilder.searchComplete(matches.entrySet().stream()
-                .map(e -> e.getKey() + ": " + e.getValue() + "occurrence(s)").toList(), 
+                .map(e -> e.getKey() + ": " + e.getValue() + " occurrence(s)").toList(), 
                 suffix);
     }
 

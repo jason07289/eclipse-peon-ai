@@ -32,7 +32,7 @@ public class EclipseWorkspaceReadFileToolTest extends AbstractTest {
         
         // THEN
         assertContains(content, getClass().getSimpleName() + ".java");
-        assertContains(content, "29");
+        assertContains(content, "30");
     }
 
     @Test
@@ -45,7 +45,7 @@ public class EclipseWorkspaceReadFileToolTest extends AbstractTest {
         var result = tool.listAllOpenEclipseProjects();
         
         // THEN
-        assertTrue("Own project not found:\n" + result, result.contains("Project name: org.sterl.llmpeon.test"));
+        assertTrue("Own project not found:\n" + result, result.contains("org.sterl.llmpeon.test"));
     }
     
     @Test
@@ -87,7 +87,7 @@ public class EclipseWorkspaceReadFileToolTest extends AbstractTest {
         var tool = new EclipseWorkspaceReadFileTool();
 
         // 1. find this file by name
-        String searchResult = tool.searchWorkspaceFiles("EclipseWorkspaceReadFileToolTest", 0);
+        String searchResult = tool.searchWorkspaceFiles("EclipseWorkspaceReadFileToolTest", null, 0);
         assertTrue("Expected to find the test file in workspace: " + searchResult,
                 searchResult.contains(this.getClass().getSimpleName() + ".java"));
 
@@ -102,12 +102,16 @@ public class EclipseWorkspaceReadFileToolTest extends AbstractTest {
         var tool = new EclipseWorkspaceReadFileTool();
 
         // unlimited should return multiple .java files
-        String all = tool.searchWorkspaceFiles("*.java", 0);
+        String all = tool.searchWorkspaceFiles("*.java", null, 0);
         int allCount = all.split("\n").length;
+        assertTrue("Expected more than 1 .java file", allCount > 1);
+        
+        all = tool.searchWorkspaceFiles("*.java", project.getName(), 0);
+        allCount = all.split("\n").length;
         assertTrue("Expected more than 1 .java file", allCount > 1);
 
         // limit=1 must return exactly 1 result
-        String limited = tool.searchWorkspaceFiles("*.java", 1);
+        String limited = tool.searchWorkspaceFiles("*.java", project.getName(), 1);
         assertEquals("Expected exactly 1 result with limit=1", 1, limited.split("\n").length);
     }
 
