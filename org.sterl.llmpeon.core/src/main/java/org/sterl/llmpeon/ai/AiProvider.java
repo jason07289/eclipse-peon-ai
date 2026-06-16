@@ -84,8 +84,9 @@ public enum AiProvider {
                     .customHeaders(c.getHeaderParams())
                     .customQueryParams(c.getQueryParams())
                     .logRequests(c.isDebugMode())
-                    .logResponses(c.isDebugMode())
-                    .reasoningEffort(c.isThinkingEnabled() ? "high" : "low");
+                    .logResponses(c.isDebugMode());
+
+            if (c.isThinkingEnabled()) builder.reasoningEffort("high");
             if (c.getMaxTokens() > 0) builder.maxCompletionTokens(c.getMaxTokens());
             return builder.build();
         }
