@@ -9,8 +9,6 @@ import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.eclipse.core.resources.IFile;
-import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.ILog;
@@ -25,12 +23,9 @@ import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.e4.ui.di.Focus;
 import org.eclipse.e4.ui.services.IServiceConstants;
 import org.eclipse.jdt.core.IClassFile;
-import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jface.text.ITextSelection;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
-import org.eclipse.jface.viewers.ITreeSelection;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
@@ -253,37 +248,12 @@ public class AIChatView implements EclipseAiMonitor {
     public void onSelection(@Named(IServiceConstants.ACTIVE_SELECTION) Object o) {
         if (o instanceof ITextSelection) return;
         
-        if (o instanceof ITreeSelection ts) {
-            if (ts.isEmpty()) o = null;
-            else o = ts.getFirstElement();
-        } else if (o instanceof IStructuredSelection ss) {
-            if (ss.isEmpty()) o = null;
-            else o = ss.getFirstElement();
-        }
         userContext.setClassFile(null);
-        final IResource selection;
-        if (o instanceof ICompilationUnit cu) {
-            selection = cu.getResource();
-        } else if (o instanceof IFile f) {
-            selection = f;
-        } else if (o instanceof IResource r) {
-            selection = r;
-        } else if (o instanceof IProject p) {
-            selection = p;
-        } else if (o instanceof IFolder f) {
-            selection = f;
-        } else if (o instanceof IJavaProject jp) {
-            selection = jp.getResource();
-        } else if(o instanceof IClassFile cf) {
-            userContext.setClassFile(cf);
-            selection = cf.getResource();
-        } else if (o instanceof IWorkingSet) {
-            selection = null;
-        } else if (o != null) {
-            LOG.info("Unknown resource type selected " + o.getClass());
-            selection = null;
-        } else {
-            selection = null;
+        var selectionElement = EclipseUtil.selectionElement(o).orElse(null);
+        if (selectionElement instanceof IClassFile classFile) userContext.setClassFile(classFile);
+        var selection = EclipseUtil.resolveResource(selectionElement).orElse(null);
+        if (selection == null && selectionElement != null && !(selectionElement instanceof IWorkingSet)) {
+            LOG.info("Unknown resource type selected " + selectionElement.getClass());
         }
         userContext.setTextSelection(null);
         userContext.setSelectedResource(selection);

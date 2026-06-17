@@ -50,6 +50,8 @@ public class TextInputWidget extends Composite {
         styledText = new StyledText(this, SWT.MULTI | SWT.WRAP);
         styledText.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         styledText.addModifyListener(e -> refreshHeight());
+        FileDropSupport.install(this, styledText);
+        FileDropSupport.install(styledText, styledText);
 
         popupMenu = new Menu(parent.getShell(), SWT.POP_UP);
         addUndoRedoSupport(popupMenu);
