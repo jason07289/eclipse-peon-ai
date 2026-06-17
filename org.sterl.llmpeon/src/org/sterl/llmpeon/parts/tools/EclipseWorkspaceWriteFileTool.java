@@ -125,6 +125,7 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
         }
 
         IFile file = writeFileToProject(targetProject.get(), projectRelativePath, content);
+        monitor.onFileUpdate(new AiFileUpdate(JdtUtil.pathOf(file), null, content));
         onTool("Created file " + JdtUtil.pathOf(file));
     }
 

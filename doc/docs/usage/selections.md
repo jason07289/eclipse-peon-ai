@@ -37,6 +37,16 @@ No need to say "in UserContext.java" — it's already included.
 
 Hover over the file name in the status bar to see a tooltip confirming automatic inclusion. You can also check that the AI sees your context by asking about "the selected file" — if it responds with information about your current file, the context is being sent correctly.
 
+## Reviewing AI File Changes
+
+When Peon AI changes workspace files, a compact review bar appears above the chat input.
+
+- Click `>` to expand the list of changed files, and click it again to collapse the list.
+- `Undo` restores modified files to their previous contents. Files created by the AI are deleted.
+- `Keep` accepts the changes and hides the review bar.
+
+The bar groups repeated edits to the same file, so `Undo` returns the file to the content it had before the AI started changing it.
+
 ## Pinning Your Project
 
 If you navigate between files in different projects, the active project may change. Use the **pin button** (📌) in the status bar to lock your current project:

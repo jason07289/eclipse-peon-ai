@@ -1,6 +1,7 @@
 package org.sterl.llmpeon.parts;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -53,6 +54,8 @@ import org.sterl.llmpeon.parts.tools.AskUserTool;
 import org.sterl.llmpeon.parts.tools.EclipseCodeNavigationTool;
 import org.sterl.llmpeon.parts.widget.ActionsBarWidget;
 import org.sterl.llmpeon.parts.widget.ChatMarkdownWidget;
+import org.sterl.llmpeon.parts.widget.FileChangeReviewWidget;
+import org.sterl.llmpeon.parts.widget.FileChangeReviewWidget.FileChange;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget.SkillMenuSelection;
 import org.sterl.llmpeon.parts.widget.UserInputWidget;
@@ -103,6 +106,7 @@ public class AIChatView implements EclipseAiMonitor {
 
     private ChatMarkdownWidget chatHistory;
     private Composite inputBlock;
+    private FileChangeReviewWidget fileChangeReview;
     private UserInputWidget chatInput;
     private UserQuestionWidget questionWidget;
 
@@ -144,6 +148,8 @@ public class AIChatView implements EclipseAiMonitor {
         inputBlockLayout.verticalSpacing = 0;
         inputBlock.setLayout(inputBlockLayout);
         inputBlock.setLayoutData(new GridData(SWT.FILL, SWT.BOTTOM, true, false));
+
+        fileChangeReview = new FileChangeReviewWidget(inputBlock, SWT.NONE, this::undoFileChanges, this::keepFileChanges);
 
         chatInput = new UserInputWidget(inputBlock, SWT.NONE,
             this::doSendMessage,
@@ -219,6 +225,7 @@ public class AIChatView implements EclipseAiMonitor {
         var s = aiService.getActiveService();
         s.clear();
         chatHistory.clear();
+        keepFileChanges();
         statusLine.updateCompact(s.getContextSize(), s.getAutoCompactAfter());
     }
 
@@ -377,7 +384,74 @@ public class AIChatView implements EclipseAiMonitor {
     public void onFileUpdate(AiFileUpdate update) {
         if (parent.isDisposed()) return;
         var diff = SimpleDiff.unifiedDiff(update.file(), update.oldContent(), update.newContent());
-        EclipseUtil.runInUiThread(parent, () -> chatHistory.showDiff(diff));
+        EclipseUtil.runInUiThread(parent, () -> {
+            fileChangeReview.addChange(update);
+            chatHistory.showDiff(diff);
+        });
+    }
+
+    private void keepFileChanges() {
+        if (fileChangeReview == null || fileChangeReview.isDisposed()) return;
+        fileChangeReview.clearChanges();
+    }
+
+    private void undoFileChanges() {
+        if (fileChangeReview == null || fileChangeReview.isDisposed() || !fileChangeReview.hasChanges()) return;
+        var changes = fileChangeReview.snapshot();
+        lockWhileWorking(true);
+        Job.create("Undo AI file changes", monitor -> {
+            monitor.beginTask("Undo AI file changes", changes.size());
+            monitorRef.set(monitor);
+            AtomicReference<Exception> ex = new AtomicReference<>();
+            try {
+                for (var change : changes.reversed()) {
+                    if (monitor.isCanceled()) throw new CancellationException("Undo canceled");
+                    undoFileChange(change, monitor);
+                    monitor.worked(1);
+                }
+            } catch (Exception e) {
+                ex.set(e);
+                if (!(e instanceof CancellationException)) {
+                    onChatResponse(new SimpleMessage(Type.PROBLEM, "Undo failed: " + e.getMessage()));
+                }
+            } finally {
+                monitor.done();
+                monitorRef.set(new NullProgressMonitor());
+                EclipseUtil.runInUiThread(parent, () -> {
+                    lockWhileWorking(false);
+                    if (ex.get() == null) {
+                        fileChangeReview.clearChanges();
+                        chatHistory.appendMessage(new SimpleMessage(Type.TOOL, "Undid AI file changes."));
+                    }
+                    refreshStatusLine();
+                });
+            }
+            return PeonConstants.status("Undo AI file changes", ex.get());
+        }).schedule();
+    }
+
+    private void undoFileChange(FileChange change, IProgressMonitor monitor) {
+        var resource = EclipseUtil.resolveInEclipse(change.file());
+        if (change.created()) {
+            resource.ifPresent(r -> {
+                try {
+                    r.delete(IResource.KEEP_HISTORY, monitor);
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to delete created file " + change.file(), e);
+                }
+            });
+            return;
+        }
+        if (resource.isEmpty() || !(resource.get() instanceof IFile file)) {
+            throw new IllegalArgumentException("Cannot restore missing file " + change.file());
+        }
+        try {
+            var charset = Charset.forName(file.getCharset());
+            file.write(change.oldContent().getBytes(charset), true, false, true, monitor);
+            file.refreshLocal(IResource.DEPTH_ZERO, monitor);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to restore " + change.file(), e);
+        }
     }
 
     @Override
