@@ -12,12 +12,19 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IAdaptable;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.jdt.core.IClassFile;
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.IJavaElement;
+import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.ITreeSelection;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.ui.IEditorInput;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.IWorkingSet;
 import org.eclipse.ui.ide.IDE;
 import org.sterl.llmpeon.shared.StringUtil;
 
@@ -86,6 +93,69 @@ public class EclipseUtil {
             if (cu != null && cu.getResource() instanceof IFile f) {
                 return Optional.of(f);
             }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Returns the selected element for common structured Eclipse selections.
+     */
+    public static Optional<Object> selectionElement(Object value) {
+        if (value == null) return Optional.empty();
+        if (value instanceof ITreeSelection selection) {
+            if (selection.isEmpty()) return Optional.empty();
+            return Optional.ofNullable(selection.getFirstElement());
+        }
+        if (value instanceof IStructuredSelection selection) {
+            if (selection.isEmpty()) return Optional.empty();
+            return Optional.ofNullable(selection.getFirstElement());
+        }
+        return Optional.of(value);
+    }
+
+    /**
+     * Resolves common Eclipse selection, JDT, and adaptable objects to a workspace resource.
+     */
+    public static Optional<IResource> resolveResource(Object value) {
+        var element = selectionElement(value);
+        if (element.isEmpty()) return Optional.empty();
+        value = element.get();
+
+        if (value instanceof IWorkingSet) return Optional.empty();
+        if (value instanceof IResource resource) return Optional.of(resource);
+        if (value instanceof ICompilationUnit compilationUnit) {
+            return Optional.ofNullable(compilationUnit.getResource());
+        }
+        if (value instanceof IJavaProject javaProject) {
+            return Optional.ofNullable(javaProject.getResource());
+        }
+        if (value instanceof IClassFile classFile) {
+            return Optional.ofNullable(classFile.getResource());
+        }
+        if (value instanceof IJavaElement javaElement) {
+            return Optional.ofNullable(javaElement.getResource());
+        }
+        if (value instanceof IAdaptable adaptable) {
+            var resource = adaptable.getAdapter(IResource.class);
+            if (resource != null) return Optional.of(resource);
+            var javaElement = adaptable.getAdapter(IJavaElement.class);
+            if (javaElement != null) return Optional.ofNullable(javaElement.getResource());
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Resolves an absolute disk location back to a workspace resource when Eclipse knows it.
+     */
+    public static Optional<IResource> resolveResourceFromLocation(String path) {
+        if (StringUtil.hasNoValue(path)) return Optional.empty();
+        var root = ResourcesPlugin.getWorkspace().getRoot();
+        var uri = Path.of(path).toUri();
+        for (var file : root.findFilesForLocationURI(uri)) {
+            if (file.exists()) return Optional.of(file);
+        }
+        for (IContainer container : root.findContainersForLocationURI(uri)) {
+            if (container.exists()) return Optional.of(container);
         }
         return Optional.empty();
     }
