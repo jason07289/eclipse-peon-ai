@@ -47,11 +47,11 @@ public abstract class AbstractChatService {
     }
 
     protected abstract String getSystemPrompt();
-    protected abstract double getTemperature();
+    public abstract double getTemperature();
 
     /** Returns the configured model name for this agent type, or null to use default. */
-    protected String resolveAgentModel() {
-        return null;
+    public String getAgentModelName() {
+        return configuredModel.getConfig().getModel();
     }
 
     /**
@@ -115,7 +115,7 @@ public abstract class AbstractChatService {
                     .toolFilter(getToolFilter())
                     .includeMcpTools(includesMcpTools())
                     .temperature(getTemperature())
-                    .modelName(resolveAgentModel())
+                    .modelName(getAgentModelName())
                     .build()
                 );
 

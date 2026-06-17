@@ -18,7 +18,7 @@ class ConfiguredModelTest {
         subject.resolveModel(Arrays.asList(AiModel.builder().id("foo").build()));
         
         // THEN
-        assertEquals("foo", subject.getModelName());
+        assertEquals("foo", subject.getConfig().getModel());
     }
     
     @Test
@@ -31,7 +31,7 @@ class ConfiguredModelTest {
                 AiModel.builder().id("bar").build()));
         
         // THEN
-        assertEquals("foo", subject.getModelName());
+        assertEquals("foo", subject.getConfig().getModel());
     }
     
     @Test
@@ -43,7 +43,7 @@ class ConfiguredModelTest {
         subject.resolveModel(Arrays.asList(AiModel.builder().id("foo").build()));
         
         // THEN
-        assertEquals("foo", subject.getModelName());
+        assertEquals("foo", subject.getConfig().getModel());
     }
 
     @Test
@@ -65,7 +65,7 @@ class ConfiguredModelTest {
         boolean changed = subject.withModel(aiModel);
 
         assertTrue(changed);
-        assertEquals("new", subject.getModelName());
+        assertEquals("new", subject.getConfig().getModel());
         assertEquals(80000, subject.getConfig().getAutoCompactAfter());
     }
 
@@ -78,7 +78,7 @@ class ConfiguredModelTest {
         boolean changed = subject.withModel(aiModel);
 
         assertTrue(changed);
-        assertEquals("new", subject.getModelName());
+        assertEquals("new", subject.getConfig().getModel());
         assertEquals(9000, subject.getConfig().getAutoCompactAfter());
     }
 

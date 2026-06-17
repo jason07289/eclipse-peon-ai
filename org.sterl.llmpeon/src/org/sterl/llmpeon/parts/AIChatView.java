@@ -452,6 +452,7 @@ public class AIChatView implements EclipseAiMonitor {
         if ("true".equalsIgnoreCase(prefs.get(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, "")) ||
                 "always".equalsIgnoreCase(prefs.get(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, "")) ||
                 (!autonomous && "not-autonomous".equalsIgnoreCase(prefs.get(PeonConstants.PREF_SHELL_CONFIRMATION_ENABLED, "")))) {
+            // TODO is this always needed??!?
             aiService.getToolService().getTool(ShellTool.class).ifPresent(shellTool -> {
                 shellTool.setConfirmationProvider((command, workingDirectory) -> {
                     var latch = new java.util.concurrent.CountDownLatch(1);
@@ -481,10 +482,10 @@ public class AIChatView implements EclipseAiMonitor {
 
     private void reloadModelsIfNeeded() {
         var config = aiService.getConfig();
-        if (StringUtil.hasNoValue(actionsBar.getSelectedModel())
-                && StringUtil.hasValue(config.getModel())) {
-            actionsBar.setModel(config.getModel());
-        }
+        var modelName = aiService.getActiveModel();
+        
+        actionsBar.setModel(modelName);
+
         if (lastListedConfig.get() == null
                 || config.getProviderType() != lastListedConfig.get().getProviderType()
                 || !java.util.Objects.equals(config.getUrl(), lastListedConfig.get().getUrl())
@@ -492,10 +493,10 @@ public class AIChatView implements EclipseAiMonitor {
             loadModelsInBackground();
         } else {
             EclipseUtil.runInUiThread(parent, () -> {
-                if (!actionsBar.containsModelId(config.getModel())) {
+                if (!actionsBar.containsModelId(modelName)) {
                     loadModelsInBackground();
                 } else {
-                    actionsBar.selectModel(config.getModel());
+                    actionsBar.selectModel(modelName);
                 }
             });
         }
@@ -505,6 +506,7 @@ public class AIChatView implements EclipseAiMonitor {
     private void loadModelsInBackground() {
         Job.create("Fetching available models", monitor -> {
             var config = aiService.getConfig();
+            var modelName = aiService.getActiveModel();
             try {
                 var models = config.listAiModels();
                 if (models.isEmpty()) {
@@ -512,15 +514,15 @@ public class AIChatView implements EclipseAiMonitor {
                 } else {
                     EclipseUtil.runInUiThread(parent, () -> {
                         aiService.resolveModel(models);
-                        actionsBar.applyModelList(models, aiService.getConfig().getModel());
+                        actionsBar.applyModelList(models, modelName);
                     });
                 }
                 return Status.OK_STATUS;
             } catch (Exception e) {
                 onChatResponse(new SimpleMessage(Type.PROBLEM, e.getMessage()));
-                if (StringUtil.hasValue(aiService.getConfig().getModel())) {
+                if (StringUtil.hasValue(modelName)) {
                     return new Status(IStatus.WARNING, PeonConstants.PLUGIN_ID, IStatus.OK, 
-                            "Failed to load models fallback to " + aiService.getConfig().getModel(), e);
+                            "Failed to load models fallback to " + modelName, e);
                 } else {
                     return new Status(IStatus.ERROR, PeonConstants.PLUGIN_ID, IStatus.OK, 
                             "Failed to load models. " + e.getMessage() + " config:\n" + aiService.getConfig(), e);
@@ -537,6 +539,7 @@ public class AIChatView implements EclipseAiMonitor {
         aiService.getAgentMode().setAutonomous(actionsBar.getAutonomous());
         aiService.setPeonMode(mode);
         refreshChat();
+        actionsBar.setModel(aiService.getActiveService().getAgentModelName());
         applyShellCommandConfirmation();
     }
 
@@ -593,7 +596,7 @@ public class AIChatView implements EclipseAiMonitor {
     }
 
     private void doSendMessage() {
-        if (StringUtil.hasNoValue(aiService.getModelName())) {
+        if (StringUtil.hasNoValue(aiService.getActiveModel())) {
             chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM, "No model configured — open Window > Preferences > Peon AI"));
             return;
         }

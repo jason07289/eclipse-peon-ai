@@ -24,12 +24,12 @@ public class AiPlannerService extends AbstractChatService {
     }
 
     @Override
-    protected double getTemperature() {
-        return configuredModel.getConfig().getPlanTemperature();
+    public double getTemperature() {
+        return configuredModel.getConfig().getDevTemperature();
     }
 
     @Override
-    protected String resolveAgentModel() {
+    public String getAgentModelName() {
         return configuredModel.getConfig().getPlanModel();
     }
 

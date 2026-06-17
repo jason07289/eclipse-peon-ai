@@ -30,6 +30,7 @@ import org.sterl.llmpeon.parts.tools.EclipseGrepTool;
 import org.sterl.llmpeon.parts.tools.EclipseRunTestTool;
 import org.sterl.llmpeon.parts.tools.EclipseWorkspaceReadFileTool;
 import org.sterl.llmpeon.parts.tools.EclipseWorkspaceWriteFileTool;
+import org.sterl.llmpeon.shared.StringUtil;
 import org.sterl.llmpeon.skill.SkillService;
 import org.sterl.llmpeon.tool.ToolService;
 import org.sterl.llmpeon.tool.tools.DiskFileReadTool;
@@ -190,6 +191,12 @@ public class PeonAiService implements MessageProvider {
         };
     }
 
+    public String getActiveModel() {
+        return StringUtil.hasValue(getActiveService().getAgentModelName())
+                ? getActiveService().getAgentModelName()
+                : getConfig().getModel();
+    }
+
     /**
      * Updates the active project across all project-aware services.
      * Safe to call from any thread — each downstream setter manages its own state.
@@ -302,10 +309,6 @@ public class PeonAiService implements MessageProvider {
     public ConfiguredChatModel resolveModel(List<AiModel> models) {
         this.configuredModel.resolveModel(models);
         return configuredModel;
-    }
-
-    public String getModelName() {
-        return configuredModel.getModelName();
     }
 
     public void withThinking(Boolean enabled) {

@@ -49,10 +49,6 @@ public class ConfiguredChatModel {
         return this.config.getProviderType().listAiModels(config);
     }
     
-    public String getModelName() {
-        return config.getModel();
-    }
-
     /**
      * Returns a new config with the given model applied.
      * 
