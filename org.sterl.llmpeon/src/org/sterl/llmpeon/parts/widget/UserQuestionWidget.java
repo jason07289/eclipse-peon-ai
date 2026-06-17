@@ -67,11 +67,11 @@ public class UserQuestionWidget extends Composite {
         textInput.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         textInput.setBackground(bgWhite);
 
-        // Ctrl/Cmd+Enter submits
+        // Enter submits; Shift+Enter inserts newline.
         textInput.addKeyListener(KeyListener.keyPressedAdapter(e -> {
             if (e.keyCode == SWT.CR || e.keyCode == SWT.LF) {
-                boolean send = (e.stateMask & SWT.CTRL) != 0 || (e.stateMask & SWT.COMMAND) != 0;
-                if (send) {
+                boolean isShiftPressed = (e.stateMask & SWT.SHIFT) != 0;
+                if (!isShiftPressed) {
                     e.doit = false;
                     doSubmit();
                 }
