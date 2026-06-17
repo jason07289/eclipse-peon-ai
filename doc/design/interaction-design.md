@@ -10,6 +10,9 @@
 ├──────────────────────────────────────────────────────┤
 │  2+3+4. Input Block (single SWT.BORDER, white bg)    │
 │  ┌─────────────────────────────────────────────────┐ │
+│  │ > 1 File                         Undo   Keep    │ │
+│  │   file.java +14 -20  (expanded only)            │ │
+│  ├─────────────────────────────────────────────────┤ │
 │  │ [📎 file.java ×] [📎 pom.xml ×]  (hidden)       │ │
 │  ├─────────────────────────────────────────────────┤ │
 │  │ Text (auto-grow, min 2, max 7 rows)       [🎤] │ │
@@ -25,6 +28,15 @@
 ```
 
 ## Section Details
+
+### 1.5 — File Change Review (FileChangeReviewWidget)
+
+- Hidden by default. Appears at the top of the input block after an AI tool changes a workspace file.
+- Header shows a collapsed/expanded toggle, changed file count, total added/removed line estimate, and **Undo** / **Keep** actions.
+- Toggle expands a compact file list with per-file paths and added/removed line estimates. Toggle again collapses it.
+- **Undo** restores modified files to the first captured pre-change content in the current review batch. Files created by the AI are deleted.
+- **Keep** accepts the current changes and hides the review widget without changing files.
+- Multiple edits to the same file are coalesced: the original pre-change content is preserved for Undo and the newest content drives the summary.
 
 ### 2 — User Input (UserInputWidget)
 
@@ -75,4 +87,3 @@ Sections 2, 3 and 4 are children of a single `inputBlock` composite (`SWT.BORDER
 - **Never** call `setBackground(...)` or `setBackgroundMode(SWT.INHERIT_FORCE)` on any composite that contains a `StyledText`. On macOS this overrides the native renderer and produces a gray field instead of white. Let the OS paint it.
 - Icon buttons are paint-based `Button(SWT.PUSH | SWT.NATIVE)` widgets — see `SwtUtil.createIconButton` and [swt-integrated-input-buttons.md](swt-integrated-input-buttons.md). They inherit the parent's native background and have no visible OS frame.
 - Dynamic state (e.g. mic recording red) uses `button.setBackground(color)` + `redraw()`; the PaintListener fills with the new color. Reset to `null` to restore the inherited native background.
-
