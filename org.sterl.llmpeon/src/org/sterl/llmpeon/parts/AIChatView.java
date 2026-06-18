@@ -1,5 +1,6 @@
 package org.sterl.llmpeon.parts;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.time.Duration;
@@ -8,12 +9,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFileState;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
@@ -50,6 +54,7 @@ import org.sterl.llmpeon.parts.log.EclipseSlf4jLogger;
 import org.sterl.llmpeon.parts.model.UserContext;
 import org.sterl.llmpeon.parts.monitor.EclipseAiMonitor;
 import org.sterl.llmpeon.parts.shared.EclipseUtil;
+import org.sterl.llmpeon.parts.shared.IoUtils;
 import org.sterl.llmpeon.parts.shared.SimpleDiff;
 import org.sterl.llmpeon.parts.tools.AskUserTool;
 import org.sterl.llmpeon.parts.tools.EclipseCodeNavigationTool;
@@ -369,10 +374,33 @@ public class AIChatView implements EclipseAiMonitor {
     public void onFileUpdate(AiFileUpdate update) {
         if (parent.isDisposed()) return;
         var diff = SimpleDiff.unifiedDiff(update.file(), update.oldContent(), update.newContent());
+        var restoreState = findRestoreState(update);
         EclipseUtil.runInUiThread(parent, () -> {
-            fileChangeReview.addChange(update);
+            fileChangeReview.addChange(update, restoreState);
             chatHistory.showDiff(diff);
         });
+    }
+
+    private IFileState findRestoreState(AiFileUpdate update) {
+        if (update.oldContent() == null) return null;
+        var resource = EclipseUtil.resolveInEclipse(update.file());
+        if (resource.isEmpty() || !(resource.get() instanceof IFile file)) return null;
+        try {
+            for (var state : file.getHistory(new NullProgressMonitor())) {
+                if (update.oldContent().equals(readFileState(file, state))) {
+                    return state;
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to read local history for " + update.file(), e);
+        }
+        return null;
+    }
+
+    private String readFileState(IFile file, IFileState state) throws CoreException, IOException {
+        try (var in = state.getContents()) {
+            return IoUtils.toString(in, file.getCharset());
+        }
     }
 
     private void keepFileChanges() {
@@ -388,10 +416,16 @@ public class AIChatView implements EclipseAiMonitor {
             monitor.beginTask("Undo AI file changes", changes.size());
             monitorRef.set(monitor);
             AtomicReference<Exception> ex = new AtomicReference<>();
+            AtomicInteger restored = new AtomicInteger();
+            AtomicInteger skipped = new AtomicInteger();
             try {
                 for (var change : changes.reversed()) {
                     if (monitor.isCanceled()) throw new CancellationException("Undo canceled");
-                    undoFileChange(change, monitor);
+                    if (undoFileChange(change, monitor)) {
+                        restored.incrementAndGet();
+                    } else {
+                        skipped.incrementAndGet();
+                    }
                     monitor.worked(1);
                 }
             } catch (Exception e) {
@@ -404,9 +438,15 @@ public class AIChatView implements EclipseAiMonitor {
                 monitorRef.set(new NullProgressMonitor());
                 EclipseUtil.runInUiThread(parent, () -> {
                     lockWhileWorking(false);
-                    if (ex.get() == null) {
+                    if (ex.get() == null && skipped.get() == 0) {
                         fileChangeReview.clearChanges();
-                        chatHistory.appendMessage(new SimpleMessage(Type.TOOL, "Undid AI file changes."));
+                        chatHistory.appendMessage(new SimpleMessage(Type.TOOL,
+                                "Undid AI file changes in " + restored.get() + " file(s)."));
+                    } else if (ex.get() == null) {
+                        chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                                "Undo skipped " + skipped.get()
+                                + " file(s) because they changed after the AI edit. "
+                                + restored.get() + " file(s) were restored."));
                     }
                     refreshStatusLine();
                 });
@@ -415,27 +455,53 @@ public class AIChatView implements EclipseAiMonitor {
         }).schedule();
     }
 
-    private void undoFileChange(FileChange change, IProgressMonitor monitor) {
+    private boolean undoFileChange(FileChange change, IProgressMonitor monitor) {
         var resource = EclipseUtil.resolveInEclipse(change.file());
         if (change.created()) {
-            resource.ifPresent(r -> {
-                try {
-                    r.delete(IResource.KEEP_HISTORY, monitor);
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to delete created file " + change.file(), e);
-                }
-            });
-            return;
+            if (resource.isEmpty()) return true;
+            if (resource.get() instanceof IFile file && hasConflict(file, change)) {
+                onChatResponse(new SimpleMessage(Type.PROBLEM,
+                        "Skipped undo for " + change.file() + ": file changed after AI creation."));
+                return false;
+            }
+            try {
+                resource.get().delete(IResource.KEEP_HISTORY, monitor);
+                return true;
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to delete created file " + change.file(), e);
+            }
         }
         if (resource.isEmpty() || !(resource.get() instanceof IFile file)) {
             throw new IllegalArgumentException("Cannot restore missing file " + change.file());
         }
+        if (hasConflict(file, change)) {
+            onChatResponse(new SimpleMessage(Type.PROBLEM,
+                    "Skipped undo for " + change.file() + ": file changed after AI edit."));
+            return false;
+        }
         try {
-            var charset = Charset.forName(file.getCharset());
-            file.write(change.oldContent().getBytes(charset), true, false, true, monitor);
+            if (change.restoreState() != null) {
+                try (var in = change.restoreState().getContents()) {
+                    file.setContents(in, IResource.FORCE | IResource.KEEP_HISTORY, monitor);
+                }
+            } else {
+                var charset = Charset.forName(file.getCharset());
+                try (var in = new ByteArrayInputStream(change.oldContent().getBytes(charset))) {
+                    file.setContents(in, IResource.FORCE | IResource.KEEP_HISTORY, monitor);
+                }
+            }
             file.refreshLocal(IResource.DEPTH_ZERO, monitor);
+            return true;
         } catch (Exception e) {
             throw new RuntimeException("Failed to restore " + change.file(), e);
+        }
+    }
+
+    private boolean hasConflict(IFile file, FileChange change) {
+        try {
+            return !file.readString().equals(change.newContent());
+        } catch (CoreException e) {
+            throw new RuntimeException("Failed to read " + change.file() + " before undo", e);
         }
     }
 

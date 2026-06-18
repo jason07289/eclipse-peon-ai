@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.eclipse.core.resources.IFileState;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
@@ -20,7 +21,7 @@ import org.sterl.llmpeon.shared.AiMonitor.AiFileUpdate;
 
 public class FileChangeReviewWidget extends Composite {
 
-    public record FileChange(String file, String oldContent, String newContent) {
+    public record FileChange(String file, String oldContent, String newContent, IFileState restoreState) {
         public boolean created() {
             return oldContent == null;
         }
@@ -122,12 +123,15 @@ public class FileChangeReviewWidget extends Composite {
         refresh();
     }
 
-    public void addChange(AiFileUpdate update) {
+    public void addChange(AiFileUpdate update, IFileState restoreState) {
         lock.lock();
         try {
             changes.compute(update.file(), (file, existing) -> {
-                if (existing == null) return new FileChange(file, update.oldContent(), update.newContent());
-                return new FileChange(file, existing.oldContent(), update.newContent());
+                if (existing == null) {
+                    return new FileChange(file, update.oldContent(), update.newContent(), restoreState);
+                }
+                var retainedState = existing.restoreState() != null ? existing.restoreState() : restoreState;
+                return new FileChange(file, existing.oldContent(), update.newContent(), retainedState);
             });
         } finally {
             lock.unlock();

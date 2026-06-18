@@ -69,7 +69,7 @@ public class EclipseWorkspaceWriteFileToolTest extends AbstractTest {
         message = readTool.readWorkspaceFile(fileName, 0, 0);
         assertTrue("Missing edit text in:\n" + message, message.contains(editMessage));
     }
-    
+
     @Test
     public void test_replaceWorkspaceLine_middle() {
         assumeTrue("Eclipse workspace not available", isWorkspaceAvailable());
