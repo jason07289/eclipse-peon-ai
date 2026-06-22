@@ -75,9 +75,8 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
             String content = readFile(eclipseFile);
             String newContent = FileUtils.applyEdit(filePath, content, oldString, newString);
             var result = writeEclipseFile(eclipseFile, newContent);
-            var editResult = new AiFileUpdate(result.file(), oldString, newString);
-            
-            monitor.onFileUpdate(editResult);
+
+            monitor.onFileUpdate(result);
         }
     }
 
