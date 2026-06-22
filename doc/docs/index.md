@@ -47,7 +47,7 @@ Install directly from Eclipse:
 After installation, configure the plugin via **Window > Preferences > Peon AI**:
 
 1. **Provider**: Select your LLM provider (Ollama, OpenAI, Anthropic, etc.)
-2. **Model**: Enter the model name (e.g., `llama3`, `codellama` for Ollama)
+2. **Model**: Enter the model name (e.g., `qwen3-coder`, `qwen3.6-27b` for Ollama)
 3. **Base URL**: Set the API endpoint (e.g., `http://localhost:11434` for Ollama)
 4. **API Key**: Enter your API key if required
 
@@ -68,6 +68,9 @@ The AI assistant has access to several tools:
 - **Search Files**: Search for text across your project
 - **Read Selected File**: Quick access to the currently selected file
 - **Update Selected File**: Modify the currently selected file
+- **Build Project**: Trigger Eclipse builds and report errors/warnings
+- **Run Tests**: Execute JUnit tests and report failures with stack traces
+- **MCP**: Connect to MCP servers for extended tooling (e.g., web search, codebase indexing)
 
 ### Example Workflows
 

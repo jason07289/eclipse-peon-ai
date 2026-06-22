@@ -11,7 +11,7 @@ Two ways to give Peon AI persistent context without repeating yourself every cha
 
 Drop an `AGENTS.md` file into your Eclipse project root. As soon as you select any
 file in that project, Peon AI picks it up and injects the content into every prompt
-as a system message.
+as a user context message.
 
 Use it for project-specific stuff:
 
@@ -20,14 +20,12 @@ Use it for project-specific stuff:
 - Important conventions or constraints
 - Links to relevant specs or docs
 
-You can embed dynamic context using `${variable}` placeholders —
-see [Template Variables](template-variables.md) for the full list.
-
 ## Recommendations
 
 - Read https://www.sri.inf.ethz.ch/publications/gloaguen2026agentsmd
 - **Keep it short.** Every line gets sent on every request.
 - Write it yourself
+- **Note:** the LLM doesn't need headlines or any format ...
 
 ```markdown
 # my-service
@@ -72,7 +70,7 @@ Good for knowledge that isn't project-specific: Eclipse API patterns, framework 
 code-style rules.
 
 Skills follow the [agentskills.io](https://agentskills.io/specification) spec.
-The `description` field also supports [Template Variables](template-variables.md).
+
 
 ```yaml
 ---

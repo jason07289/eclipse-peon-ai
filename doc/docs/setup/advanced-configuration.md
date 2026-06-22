@@ -78,8 +78,8 @@ Controls the maximum number of tokens in model responses (0 = disable limit):
 |---------|--------|
 | **Low values** (1024) | Short, concise responses; faster generation - may break |
 | **Recommended low** (2048) | Have a short value, limits also the think budget where possible |
-| **Default nowerdays** (4000) | Usually a a good default or with Opus around 8000 |
-| **Disabled** (0) | Provider's default limit applies |
+| **Default nowerdays** (4000) | Usually a a good default or with Opus around 8.000 |
+| **Disabled** (0) | Provider's default limit applies - often around 2.048 |
 
 ---
 

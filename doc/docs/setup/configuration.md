@@ -13,7 +13,7 @@ After installation, configure the plugin via **Window > Preferences > Peon AI**.
 
 ### Ollama
 
-Run models locally e.g. windows.
+Run models locally e.g. mac.
 
 | Setting | Value |
 |---------|-------|
@@ -26,7 +26,7 @@ Run models locally e.g. windows.
 
 ### LM Studio
 
-Run models locally — e.g. for MAC.
+Run models locally — e.g. for windows.
 
 | Setting | Value |
 |---------|-------|
@@ -72,7 +72,7 @@ Set the API Key to a dummy value like `none` if the server does not require one.
 | Setting | Value |
 |---------|-------|
 | Provider | `MISTRAL` |
-| Model | `mistral-large-latest`, `mistral-small-latest`, `codestral-latest` |
+| Model | `mistral-large-latest`, `mistral-small-latest`, `devstral-latest` |
 | Base URL | *(leave empty)* — set `https://api.mistral.ai` in Voice preferences if using voice input |
 | API Key | Your Mistral API key |
 
@@ -141,7 +141,7 @@ Access Claude Sonnet, Claude Opus, Claude Haiku, GPT-5, and more as a [GitHub Co
 | **Provider name** | `GITHUB_MODELS` | `GITHUB_COPILOT` |
 | **Use case** | One-off testing, marketplace exploration | Primary AI assistant with Copilot benefits |
 
-## Advanced Settings
+## Settings
 
 ### Token Window
 
@@ -150,89 +150,19 @@ The **Token Window** setting controls how many tokens of conversation history ar
 | Setting | Value |
 |---------|-------|
 | Preference Key | `llm.tokenWindow` (`PREF_TOKEN_WINDOW`) |
-| Default Value | `16000` tokens |
+| Default Value | `80.000` tokens |
 | Type | Integer |
 | Editor Component | `IntegerFieldEditor` in `AiConfigPreferenceView` |
 
----
-
-#### Configuration Flow
-
-```mermaid
-graph LR
-    A[User sets value in UI] --> B[Eclipse Preference Store<br/>ScopedPreferenceStore]
-    B --> C[LlmConfig.tokenWindow field]
-    C --> D1[Provider buildChatModel()<br/>limits context sent to LLM]
-    C --> D2[TemplateContext.setTokenWindow()<br/>available as ${tokenWindow}]
-```
-
-**Key Points:**
-1. Value is stored in Eclipse `ScopedPreferenceStore` with instance scope
-2. Retrieved by `LlmConfig.tokenWindow()` field (default: 16000)
-3. Used by provider's `buildChatModel()` for context window limits
-4. Also set in `TemplateContext` as template variable `${tokenWindow}`
-
----
-
-#### Template Variable Integration
-
-The token window is available as a template variable `${tokenWindow}` in prompt templates, allowing dynamic reference to the configured limit:
-
-```java
-// Example usage in system prompts or instruction templates
-String systemPrompt = "Keep responses within ${tokenWindow} tokens.";
-```
-
-This enables agent personas and instruction templates to respect context boundaries defined by the user.
-
----
 
 #### Important Distinction: Token Window vs Message Memory Buffer
 
 | Component | Purpose | Limit | Configurable |
 |-----------|---------|-------|--------------|
-| **Token Window** | Context sent to AI provider | ~16000 (configurable) | Yes - via this setting |
-| **Message Memory Buffer** | Internal conversation history storage | 500,000 messages | Fixed in `MessageWindowChatMemory` |
+| **Token Window** | Max token window a model supports | ~256.000 (configurable) | Yes - via this setting |
+| **Max output tokens** | Max amount of token a model may generate | 0 (none) | see advanced configuration |
 
-**Explanation:** The token window limits what context is *sent to the LLM* for each request, while the message memory buffer stores conversation history internally. A user can have a large internal history but only send the most recent tokens within their configured window to the AI model.
-
----
-
-#### How It Works
-
-1. User sets token window value in preferences
-2. Value stored in `ScopedPreferenceStore` under key `llm.tokenWindow`
-3. When chat service starts, `LlmConfig.newConfig()` initializes with default 16000 (or loaded from prefs)
-4. Each request includes up to `tokenWindow` tokens of conversation history
-5. AI provider may adjust based on their own limits
-
----
-
-#### Practical Guidance
-
-**Recommended Values by Use Case:**
-
-| Value Range | Use Case | Trade-offs |
-|-------------|----------|------------|
-| **1000-2000** | Simple queries, coding tasks, one-off requests | Fast responses, lower costs, limited context awareness |
-| **2000-16000** | General conversation, most everyday use cases | Balanced approach, good context retention without excessive latency |
-| **16000-8192** | Complex multi-turn conversations, long discussions | Best for referencing earlier messages, may increase latency and costs |
-
----
-
-#### Provider-Specific Context Limits
-
-Different AI providers have different maximum context window capabilities:
-
-| Provider | Typical Maximum | Notes |
-|----------|-----------------|-------|
-| **Ollama (local)** | 2048-4096 (model dependent) | Check specific model documentation; varies by quantization |
-| **OpenAI gpt-4o** | Up to 128,000 tokens | Generous limits; token window setting often irrelevant for these models |
-| **LM Studio** | Model-dependent | Depends on underlying model configuration in LM Studio UI |
-| **Google Gemini** | Up to 1M+ tokens (some models) | Check specific model documentation |
-| **Mistral AI** | Varies by model | Typically 32K-128K context windows |
-
-**Recommendation:** For local providers (Ollama, LM Studio), set token window close to their default. For cloud providers with large context windows (OpenAI, Gemini), you can set higher values if needed for long conversations.
+**Explanation:** The token window limits what context is *sent to the LLM* for each request. As soon it is reached a `auto compact` is triggered. In the tool call chain the LLM will get a message to use the `compact session tool` if this limit is reached.
 
 ---
 
@@ -244,6 +174,7 @@ Different AI providers have different maximum context window capabilities:
    - Automatically truncate older messages (silently)
    - Reject the request with an error
    - Return degraded responses
+   - Locally it will just crash your system
 
 3. **Check provider documentation**: Before setting very high values, verify your specific model's maximum context window in the provider's documentation.
 
