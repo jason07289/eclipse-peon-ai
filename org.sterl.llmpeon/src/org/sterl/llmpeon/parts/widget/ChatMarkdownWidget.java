@@ -9,7 +9,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.eclipse.core.resources.IFile;
 import org.eclipse.core.runtime.FileLocator;
 import org.eclipse.core.runtime.Path;
 import org.eclipse.swt.SWT;
@@ -54,13 +53,8 @@ public class ChatMarkdownWidget extends Composite {
                 final String prefix = "open-in-editor:";
                 if (event.location == null || !event.location.startsWith(prefix)) return;
                 event.doit = false;
-                var path = URLDecoder.decode(
-                        event.location.substring(prefix.length()), StandardCharsets.UTF_8);
-                EclipseUtil.resolveInEclipse(path)
-                        .filter(IFile.class::isInstance)
-                        .map(IFile.class::cast)
-                        .filter(f -> !EclipseUtil.isOpenInEditor(f))
-                        .ifPresent(EclipseUtil::openInEditor);
+                EclipseUtil.openWorkspacePathInEditor(
+                        URLDecoder.decode(event.location.substring(prefix.length()), StandardCharsets.UTF_8));
             }
 
             @Override

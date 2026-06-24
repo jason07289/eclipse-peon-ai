@@ -67,6 +67,18 @@ public class EclipseUtil {
         return getOpenFile().map(file::equals).orElse(false);
     }
 
+    /**
+     * Resolves a workspace path and opens the file in the editor unless it is already active.
+     * Must be called from the UI thread.
+     */
+    public static void openWorkspacePathInEditor(String path) {
+        resolveInEclipse(path)
+                .filter(IFile.class::isInstance)
+                .map(IFile.class::cast)
+                .filter(f -> !isOpenInEditor(f))
+                .ifPresent(EclipseUtil::openInEditor);
+    }
+
     public static IProject firstOpenOrSelectedProject() {
         var openFile = getOpenFile();
         if (openFile.isPresent()) return openFile.get().getProject();

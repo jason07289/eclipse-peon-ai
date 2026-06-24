@@ -17,6 +17,7 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Label;
+import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.shared.AiMonitor.AiFileUpdate;
 
 public class FileChangeReviewWidget extends Composite {
@@ -211,7 +212,12 @@ public class FileChangeReviewWidget extends Composite {
             row.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
             Label fileLabel = new Label(row, SWT.NONE);
-            fileLabel.setText(change.created() ? "[new] " + change.file() : change.file());
+            var path = change.file();
+            fileLabel.setText(change.created() ? "[new] " + path : path);
+            fileLabel.setForeground(getDisplay().getSystemColor(SWT.COLOR_LINK_FOREGROUND));
+            fileLabel.setCursor(getDisplay().getSystemCursor(SWT.CURSOR_HAND));
+            fileLabel.setToolTipText("Open in editor");
+            fileLabel.addListener(SWT.MouseUp, e -> EclipseUtil.openWorkspacePathInEditor(path));
             fileLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
             Label addedLabel = new Label(row, SWT.NONE);
