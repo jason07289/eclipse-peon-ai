@@ -17,8 +17,10 @@ import org.eclipse.core.resources.IFileState;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -472,6 +474,24 @@ public class AIChatView implements EclipseAiMonitor {
 
     private boolean undoFileChange(FileChange change, IProgressMonitor monitor) {
         var resource = EclipseUtil.resolveInEclipse(change.file());
+        if (change.deleted()) {
+            if (resource.isPresent()) {
+                onChatResponse(new SimpleMessage(Type.PROBLEM,
+                        "Skipped undo for " + change.file() + ": a file already exists at this path."));
+                return false;
+            }
+            var ifile = ResourcesPlugin.getWorkspace().getRoot()
+                    .getFile(IPath.fromPortableString(change.file()));
+            try {
+                var charset = Charset.forName(ifile.getCharset());
+                try (var in = new ByteArrayInputStream(change.oldContent().getBytes(charset))) {
+                    ifile.create(in, IResource.FORCE | IResource.KEEP_HISTORY, monitor);
+                }
+                return true;
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to recreate deleted file " + change.file(), e);
+            }
+        }
         if (change.created()) {
             if (resource.isEmpty()) return true;
             if (resource.get() instanceof IFile file && hasConflict(file, change)) {

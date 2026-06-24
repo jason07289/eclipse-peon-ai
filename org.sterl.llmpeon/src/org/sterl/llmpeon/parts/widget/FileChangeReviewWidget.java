@@ -27,6 +27,10 @@ public class FileChangeReviewWidget extends Composite {
             return oldContent == null;
         }
 
+        public boolean deleted() {
+            return newContent == null && oldContent != null;
+        }
+
         public int addedLines() {
             return Math.max(0, lineCount(newContent) - lineCount(oldContent));
         }
@@ -204,20 +208,34 @@ public class FileChangeReviewWidget extends Composite {
         Color red = getDisplay().getSystemColor(SWT.COLOR_DARK_RED);
         for (var change : snapshot) {
             Composite row = new Composite(fileList, SWT.NONE);
-            GridLayout rowLayout = new GridLayout(3, false);
+            GridLayout rowLayout = new GridLayout(4, false);
             rowLayout.marginWidth = 0;
             rowLayout.marginHeight = 0;
             rowLayout.horizontalSpacing = 5;
             row.setLayout(rowLayout);
             row.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
+            Label statusLabel = new Label(row, SWT.NONE);
+            if (change.created()) {
+                statusLabel.setText("new");
+                statusLabel.setForeground(green);
+            } else if (change.deleted()) {
+                statusLabel.setText("deleted");
+                statusLabel.setForeground(red);
+            }
+            var statusData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+            statusData.widthHint = 52;
+            statusLabel.setLayoutData(statusData);
+
             Label fileLabel = new Label(row, SWT.NONE);
             var path = change.file();
-            fileLabel.setText(change.created() ? "[new] " + path : path);
-            fileLabel.setForeground(getDisplay().getSystemColor(SWT.COLOR_LINK_FOREGROUND));
-            fileLabel.setCursor(getDisplay().getSystemCursor(SWT.CURSOR_HAND));
-            fileLabel.setToolTipText("Open in editor");
-            fileLabel.addListener(SWT.MouseUp, e -> EclipseUtil.openWorkspacePathInEditor(path));
+            fileLabel.setText(path);
+            if (!change.deleted()) {
+                fileLabel.setForeground(getDisplay().getSystemColor(SWT.COLOR_LINK_FOREGROUND));
+                fileLabel.setCursor(getDisplay().getSystemCursor(SWT.CURSOR_HAND));
+                fileLabel.setToolTipText("Open in editor");
+                fileLabel.addListener(SWT.MouseUp, e -> EclipseUtil.openWorkspacePathInEditor(path));
+            }
             fileLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
             Label addedLabel = new Label(row, SWT.NONE);

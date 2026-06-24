@@ -192,13 +192,17 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
         var file = EclipseUtil.resolveInEclipse(filePath);
         if (file.isEmpty()) throw new IllegalArgumentException("Not found: " + filePath);
 
+        var resource = file.get();
+        String oldContent = resource instanceof IFile f ? readFile(f) : null;
+        String path = JdtUtil.pathOf(resource);
         try {
             try {
-                file.get().delete(IResource.KEEP_HISTORY, getProgressMonitor());
+                resource.delete(IResource.KEEP_HISTORY, getProgressMonitor());
             } catch (Exception e) {
-                file.get().delete(IResource.FORCE, getProgressMonitor());
+                resource.delete(IResource.FORCE, getProgressMonitor());
             }
-            onTool("Deleting " + JdtUtil.pathOf(file.get()));
+            if (oldContent != null) monitor.onFileUpdate(new AiFileUpdate(path, oldContent, null));
+            onTool("Deleting " + path);
         } catch (CoreException e) {
             throw new RuntimeException("Failed to delete " + filePath, e);
         }
