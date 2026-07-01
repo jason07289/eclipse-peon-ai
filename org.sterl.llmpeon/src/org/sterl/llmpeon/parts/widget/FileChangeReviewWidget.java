@@ -175,6 +175,12 @@ public class FileChangeReviewWidget extends Composite {
         }
     }
 
+    /** Enable/disable the Undo & Keep actions while a request is in flight. */
+    public void setActionsEnabled(boolean enabled) {
+        if (undoButton != null && !undoButton.isDisposed()) undoButton.setEnabled(enabled);
+        if (keepButton != null && !keepButton.isDisposed()) keepButton.setEnabled(enabled);
+    }
+
     private void setExpanded(boolean expanded) {
         this.expanded = expanded;
         GridData data = (GridData)fileList.getLayoutData();

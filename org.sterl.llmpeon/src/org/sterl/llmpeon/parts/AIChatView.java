@@ -861,6 +861,9 @@ public class AIChatView implements EclipseAiMonitor {
         if (parent == null || parent.isDisposed()) return;
         actionsBar.lockWhileWorking(value);
         chatInput.setWorking(value);
+        if (fileChangeReview != null && !fileChangeReview.isDisposed()) {
+            fileChangeReview.setActionsEnabled(!value);
+        }
         if (!value) chatHistory.hideLiveStatus();
         if (!value && questionWidget != null && questionWidget.isVisible()) {
             questionWidget.cancel();
