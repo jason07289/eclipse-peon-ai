@@ -131,7 +131,7 @@ public class DiskFileWriteTool extends AbstractTool {
             String newContent = FileUtils.applyEdit(filePath, content, oldString, newString);
             Files.writeString(resolved, newContent);
 
-            var result = new AiFileUpdate(workingDir.relativize(resolved).toString(), oldString, newString);
+            var result = new AiFileUpdate(workingDir.relativize(resolved).toString(), content, newContent);
             monitor.onFileUpdate(result);
 
         } catch (IOException e) {

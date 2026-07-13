@@ -1,5 +1,7 @@
 package org.sterl.llmpeon.parts.shared;
 
+import java.io.File;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -185,6 +187,29 @@ public class EclipseUtil {
             // java src fallback
             result = p.findMember("src/" + ipath);
             if (result != null && result.exists()) return Optional.of(result);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Maps an absolute OS filesystem path to a workspace resource when the file or folder
+     * is part of the Eclipse workspace.
+     */
+    public static Optional<IResource> resolveByLocation(String osPath) {
+        if (StringUtil.hasNoValue(osPath)) return Optional.empty();
+        try {
+            var file = new File(osPath);
+            if (!file.exists()) return Optional.empty();
+            URI uri = file.toURI();
+            var root = ResourcesPlugin.getWorkspace().getRoot();
+            for (var candidate : root.findFilesForLocationURI(uri)) {
+                if (candidate != null && candidate.exists()) return Optional.of(candidate);
+            }
+            for (var candidate : root.findContainersForLocationURI(uri)) {
+                if (candidate != null && candidate.exists()) return Optional.of(candidate);
+            }
+        } catch (Exception e) {
+            // workspace unavailable or path not mappable
         }
         return Optional.empty();
     }

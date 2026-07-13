@@ -19,6 +19,7 @@ import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.ui.part.ResourceTransfer;
 import org.eclipse.swt.custom.StyledText;
+import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.parts.shared.JdtUtil;
 
 final class FileDropSupport {
@@ -103,7 +104,7 @@ final class FileDropSupport {
     private static void addDropPaths(List<String> paths, Object data) {
         if (data == null) return;
         if (data instanceof String[] values) {
-            for (String value : values) addPath(paths, value);
+            for (String value : values) addOsPath(paths, value);
         } else if (data instanceof IResource[] resources) {
             for (IResource resource : resources) addResourcePath(paths, resource);
         } else if (data instanceof IStructuredSelection selection) {
@@ -134,7 +135,18 @@ final class FileDropSupport {
     }
 
     private static void addResourcePath(List<String> paths, IResource resource) {
-        addPath(paths, JdtUtil.diskPathOf(resource));
+        String workspacePath = JdtUtil.pathOf(resource);
+        addPath(paths, workspacePath != null ? workspacePath : JdtUtil.diskPathOf(resource));
+    }
+
+    private static void addOsPath(List<String> paths, String osPath) {
+        if (osPath == null || osPath.isBlank()) return;
+        var resource = EclipseUtil.resolveByLocation(osPath);
+        if (resource.isPresent()) {
+            addResourcePath(paths, resource.get());
+        } else {
+            addPath(paths, osPath);
+        }
     }
 
     private static void addPath(List<String> paths, String path) {
