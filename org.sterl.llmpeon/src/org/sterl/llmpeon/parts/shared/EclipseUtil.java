@@ -15,11 +15,15 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.swt.SWTException;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorInput;
 import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.ide.IDE;
+import org.eclipse.ui.part.FileEditorInput;
 import org.sterl.llmpeon.shared.StringUtil;
 
 public class EclipseUtil {
@@ -79,6 +83,45 @@ public class EclipseUtil {
                 .map(IFile.class::cast)
                 .filter(f -> !isOpenInEditor(f))
                 .ifPresent(EclipseUtil::openInEditor);
+    }
+
+    /**
+     * Saves the workbench editor for {@code file} when it is open and dirty.
+     * Safe to call from background threads (uses {@code syncExec} on the UI thread).
+     * No-op when no workbench UI is available (e.g. headless tests).
+     */
+    public static void saveEditorIfOpen(IFile file) {
+        if (file == null || !file.exists()) return;
+        try {
+            if (PlatformUI.getWorkbench() == null) return;
+            Runnable save = () -> saveEditorIfOpenOnUiThread(file);
+            Display display = Display.getCurrent();
+            if (display != null) {
+                save.run();
+                return;
+            }
+            display = Display.getDefault();
+            if (display != null && !display.isDisposed()) {
+                display.syncExec(save);
+            }
+        } catch (SWTException | IllegalStateException e) {
+            // Headless or no SWT display — disk content is already current.
+        }
+    }
+
+    private static void saveEditorIfOpenOnUiThread(IFile file) {
+        IEditorInput input = new FileEditorInput(file);
+        for (var window : PlatformUI.getWorkbench().getWorkbenchWindows()) {
+            var page = window.getActivePage();
+            if (page == null) continue;
+            IEditorPart editor = page.findEditor(input);
+            if (editor == null || !editor.isDirty()) continue;
+            try {
+                page.saveEditor(editor, false);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to save editor for " + file.getFullPath(), e);
+            }
+        }
     }
 
     public static IProject firstOpenOrSelectedProject() {

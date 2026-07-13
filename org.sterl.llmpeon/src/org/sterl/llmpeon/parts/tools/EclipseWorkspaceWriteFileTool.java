@@ -209,6 +209,7 @@ public class EclipseWorkspaceWriteFileTool extends AbstractEclipseTool {
     }
 
     private AiFileUpdate writeEclipseFile(IFile file, String content) {
+        EclipseUtil.saveEditorIfOpen(file);
         var oldContent = readFile(file);
         try {
             var charset = Charset.forName(file.getCharset());

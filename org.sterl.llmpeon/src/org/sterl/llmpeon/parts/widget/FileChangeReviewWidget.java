@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.core.resources.IFileState;
@@ -131,17 +132,22 @@ public class FileChangeReviewWidget extends Composite {
     public void addChange(AiFileUpdate update, IFileState restoreState) {
         lock.lock();
         try {
-            changes.compute(update.file(), (file, existing) -> {
-                if (existing == null) {
-                    return new FileChange(file, update.oldContent(), update.newContent(), restoreState);
-                }
-                var retainedState = existing.restoreState() != null ? existing.restoreState() : restoreState;
-                return new FileChange(file, existing.oldContent(), update.newContent(), retainedState);
-            });
+            changes.compute(update.file(), (file, existing) -> mergeChange(file, existing, update, restoreState));
         } finally {
             lock.unlock();
         }
         refresh();
+    }
+
+    static FileChange mergeChange(String file, FileChange existing, AiFileUpdate update, IFileState restoreState) {
+        if (existing == null) {
+            return new FileChange(file, update.oldContent(), update.newContent(), restoreState);
+        }
+        if (!Objects.equals(existing.newContent(), update.oldContent())) {
+            return new FileChange(file, update.oldContent(), update.newContent(), restoreState);
+        }
+        var retainedState = existing.restoreState() != null ? existing.restoreState() : restoreState;
+        return new FileChange(file, existing.oldContent(), update.newContent(), retainedState);
     }
 
     public List<FileChange> snapshot() {
