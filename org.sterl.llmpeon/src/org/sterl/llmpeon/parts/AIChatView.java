@@ -156,6 +156,8 @@ public class AIChatView implements EclipseAiMonitor {
         inputBlock.setLayout(inputBlockLayout);
         inputBlock.setLayoutData(new GridData(SWT.FILL, SWT.BOTTOM, true, false));
 
+        UserInputWidget.setDropActiveProjectSupplier(userContext::getCurrentProject);
+
         fileChangeReview = new FileChangeReviewWidget(inputBlock, SWT.NONE, this::undoFileChanges, this::keepFileChanges);
 
         chatInput = new UserInputWidget(inputBlock, SWT.NONE,

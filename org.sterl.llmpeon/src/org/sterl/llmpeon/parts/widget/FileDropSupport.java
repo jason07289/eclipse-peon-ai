@@ -2,7 +2,9 @@ package org.sterl.llmpeon.parts.widget;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.IAdaptable;
 import org.eclipse.jface.util.LocalSelectionTransfer;
@@ -24,7 +26,13 @@ import org.sterl.llmpeon.parts.shared.JdtUtil;
 
 final class FileDropSupport {
 
+    private static volatile Supplier<IProject> activeProjectSupplier = () -> null;
+
     private FileDropSupport() {
+    }
+
+    static void setActiveProjectSupplier(Supplier<IProject> supplier) {
+        activeProjectSupplier = supplier != null ? supplier : () -> null;
     }
 
     static void install(Control dropControl, StyledText targetText) {
@@ -136,7 +144,16 @@ final class FileDropSupport {
 
     private static void addResourcePath(List<String> paths, IResource resource) {
         String workspacePath = JdtUtil.pathOf(resource);
-        addPath(paths, workspacePath != null ? workspacePath : JdtUtil.diskPathOf(resource));
+        if (workspacePath == null) {
+            addPath(paths, JdtUtil.diskPathOf(resource));
+            return;
+        }
+        IProject active = activeProjectSupplier.get();
+        if (active != null && !active.equals(resource.getProject())) {
+            addPath(paths, JdtUtil.diskPathOf(resource));
+        } else {
+            addPath(paths, workspacePath);
+        }
     }
 
     private static void addOsPath(List<String> paths, String osPath) {

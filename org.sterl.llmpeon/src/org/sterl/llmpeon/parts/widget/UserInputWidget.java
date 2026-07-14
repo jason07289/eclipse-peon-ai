@@ -3,6 +3,7 @@ package org.sterl.llmpeon.parts.widget;
 import java.util.List;
 import java.util.function.Supplier;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.debug.ui.DebugUITools;
 import org.eclipse.debug.ui.IDebugUIConstants;
 import org.eclipse.swt.SWT;
@@ -27,6 +28,10 @@ import org.sterl.llmpeon.shared.model.SimplePromptFile;
  * inherit the same background so the whole area reads as one flat field.
  */
 public class UserInputWidget extends Composite {
+
+    public static void setDropActiveProjectSupplier(Supplier<IProject> supplier) {
+        FileDropSupport.setActiveProjectSupplier(supplier);
+    }
 
     private final TextInputWidget textInput;
     private final Composite rightColumn;
