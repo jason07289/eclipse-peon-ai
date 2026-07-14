@@ -57,10 +57,10 @@ public class DiskFileWriteTool extends AbstractTool {
             Files.writeString(resolved, content);
 
             if (existed) {
-                monitor.onFileUpdate(new AiFileUpdate(workingDir.relativize(resolved).toString(), oldContent, content));
+                monitor.onFileUpdate(new AiFileUpdate(recordPath(resolved), oldContent, content));
             }
             
-            onTool((existed ? "Updated" : "Created") + " file: " + workingDir.relativize(resolved));
+            onTool((existed ? "Updated" : "Created") + " file: " + recordPath(resolved));
         } catch (IOException e) {
             throw new RuntimeException("Failed to write " + filePath, e);
         }
@@ -77,7 +77,7 @@ public class DiskFileWriteTool extends AbstractTool {
 
         try {
             Files.delete(resolved);
-            onTool("Deleted file: " + workingDir.relativize(resolved));
+            onTool("Deleted file: " + recordPath(resolved));
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete " + filePath, e);
         }
@@ -101,7 +101,7 @@ public class DiskFileWriteTool extends AbstractTool {
             String content = Files.readString(resolved);
             String newFullContent = FileLines.replaceLines(content, line, line, newContent);
             Files.writeString(resolved, newFullContent);
-            monitor.onFileUpdate(new AiFileUpdate(workingDir.relativize(resolved).toString(), content, newFullContent));
+            monitor.onFileUpdate(new AiFileUpdate(recordPath(resolved), content, newFullContent));
         } catch (IOException e) {
             throw new RuntimeException("Failed to edit " + filePath, e);
         }
@@ -131,7 +131,7 @@ public class DiskFileWriteTool extends AbstractTool {
             String newContent = FileUtils.applyEdit(filePath, content, oldString, newString);
             Files.writeString(resolved, newContent);
 
-            var result = new AiFileUpdate(workingDir.relativize(resolved).toString(), content, newContent);
+            var result = new AiFileUpdate(recordPath(resolved), content, newContent);
             monitor.onFileUpdate(result);
 
         } catch (IOException e) {
@@ -161,7 +161,7 @@ public class DiskFileWriteTool extends AbstractTool {
         try {
             if (target.getParent() != null) Files.createDirectories(target.getParent());
             Files.move(source, target);
-            onTool("Renamed " + workingDir.relativize(source) + " -> " + workingDir.relativize(target));
+            onTool("Renamed " + recordPath(source) + " -> " + recordPath(target));
         } catch (IOException e) {
             throw new RuntimeException("Failed to rename " + sourcePath + " -> " + targetPath, e);
         }
@@ -185,7 +185,7 @@ public class DiskFileWriteTool extends AbstractTool {
             String content = Files.readString(resolved);
             String newFullContent = FileLines.insertLines(content, afterLine, newContent);
             Files.writeString(resolved, newFullContent);
-            monitor.onFileUpdate(new AiFileUpdate(workingDir.relativize(resolved).toString(), content, newFullContent));
+            monitor.onFileUpdate(new AiFileUpdate(recordPath(resolved), content, newFullContent));
         } catch (IOException e) {
             throw new RuntimeException("Failed to edit " + filePath, e);
         }
@@ -193,5 +193,24 @@ public class DiskFileWriteTool extends AbstractTool {
 
     private Path resolve(String path) {
         return FileUtils.resolve(workingDir, path);
+    }
+
+    private String recordPath(Path resolved) {
+        return recordPath(workingDir, resolved);
+    }
+
+    /**
+     * The path stored for change tracking / editor links.
+     * Files inside {@code workingDir} use a portable relative path; files outside it
+     * (e.g. a sibling project when the working directory is pinned to one project) use their
+     * absolute path so the Eclipse side can map them back via their filesystem location.
+     * The result always uses {@code /} as separator so it resolves regardless of OS.
+     */
+    static String recordPath(Path workingDir, Path resolved) {
+        Path abs = resolved.toAbsolutePath().normalize();
+        String path = abs.startsWith(workingDir)
+                ? workingDir.relativize(abs).toString()
+                : abs.toString();
+        return FileUtils.normalizePath(path);
     }
 }

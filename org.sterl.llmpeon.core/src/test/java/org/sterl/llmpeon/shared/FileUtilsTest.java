@@ -27,6 +27,31 @@ class FileUtilsTest {
         assertThat(FileUtils.normalizePath(value)).isEqualTo(expected);
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        // already portable → unchanged
+        "src/main/java/App.java          , src/main/java/App.java",
+        // windows relative → forward slashes
+        "src\\main\\java\\App.java        , src/main/java/App.java",
+        // mixed separators
+        "src/main\\java/App.java          , src/main/java/App.java",
+        // windows absolute path keeps drive letter, only separators change
+        "C:\\projects\\exm-svc\\A.java    , C:/projects/exm-svc/A.java",
+        // the regression path: parent-relative windows path
+        "..\\exm-svc\\src\\A.java         , ../exm-svc/src/A.java",
+        // posix absolute → unchanged
+        "/projects/exm-svc/A.java         , /projects/exm-svc/A.java"
+    })
+    void normalizePath_convertsSeparators(String value, String expected) {
+        assertThat(FileUtils.normalizePath(value)).isEqualTo(expected);
+    }
+
+    @Test
+    void normalizePath_nullAndEmptyAreReturnedUnchanged() {
+        assertThat(FileUtils.normalizePath(null)).isNull();
+        assertThat(FileUtils.normalizePath("")).isEmpty();
+    }
+
     /** Bug 3: second write must fully replace the file content, not leave stale bytes. */
     @Test
     void writeString_overwritesShorterContent() throws IOException {

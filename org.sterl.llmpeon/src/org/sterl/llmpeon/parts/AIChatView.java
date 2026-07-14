@@ -68,6 +68,7 @@ import org.sterl.llmpeon.parts.widget.StatusLineWidget.SkillMenuSelection;
 import org.sterl.llmpeon.parts.widget.UserInputWidget;
 import org.sterl.llmpeon.parts.widget.UserQuestionWidget;
 import org.sterl.llmpeon.shared.OnPartialAiResponse;
+import org.sterl.llmpeon.shared.FileUtils;
 import org.sterl.llmpeon.shared.StringUtil;
 import org.sterl.llmpeon.shared.model.SimplePromptFile;
 import org.sterl.llmpeon.tool.model.SimpleMessage;
@@ -483,7 +484,7 @@ public class AIChatView implements EclipseAiMonitor {
                 return false;
             }
             var ifile = ResourcesPlugin.getWorkspace().getRoot()
-                    .getFile(IPath.fromPortableString(change.file()));
+                    .getFile(IPath.fromPortableString(FileUtils.normalizePath(change.file())));
             try {
                 var charset = Charset.forName(ifile.getCharset());
                 try (var in = new ByteArrayInputStream(change.oldContent().getBytes(charset))) {

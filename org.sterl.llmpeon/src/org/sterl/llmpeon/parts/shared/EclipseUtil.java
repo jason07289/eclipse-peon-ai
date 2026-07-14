@@ -24,6 +24,7 @@ import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.ide.IDE;
 import org.eclipse.ui.part.FileEditorInput;
+import org.sterl.llmpeon.shared.FileUtils;
 import org.sterl.llmpeon.shared.StringUtil;
 
 public class EclipseUtil {
@@ -216,7 +217,9 @@ public class EclipseUtil {
      */
     public static Optional<IResource> resolveInEclipse(String path) {
         if (StringUtil.hasNoValue(path)) return Optional.empty();
-        IPath ipath = IPath.fromPortableString(path);
+        // Normalize OS separators (e.g. Windows "src\main") to the portable form Eclipse expects.
+        String normalized = FileUtils.normalizePath(path);
+        IPath ipath = IPath.fromPortableString(normalized);
         try {
             var result = ResourcesPlugin.getWorkspace().getRoot().findMember(ipath);
             if (result != null && result.exists()) return Optional.of(result);
@@ -228,10 +231,11 @@ public class EclipseUtil {
             var result = p.findMember(ipath);
             if (result != null && result.exists()) return Optional.of(result);
             // java src fallback
-            result = p.findMember("src/" + ipath);
+            result = p.findMember("src/" + normalized);
             if (result != null && result.exists()) return Optional.of(result);
         }
-        return Optional.empty();
+        // Absolute OS path (e.g. cross-project edits by the disk tools) → map by filesystem location.
+        return resolveByLocation(path);
     }
 
     /**
