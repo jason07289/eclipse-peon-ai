@@ -86,13 +86,16 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
 
         var colLabel = new TableColumn(stepTable, SWT.NONE);
         colLabel.setText("Label");
-        colLabel.setWidth(140);
+        colLabel.setWidth(120);
         var colKind = new TableColumn(stepTable, SWT.NONE);
         colKind.setText("Kind");
-        colKind.setWidth(160);
+        colKind.setWidth(140);
         var colPrompt = new TableColumn(stepTable, SWT.NONE);
         colPrompt.setText("Prompt");
-        colPrompt.setWidth(280);
+        colPrompt.setWidth(180);
+        var colFields = new TableColumn(stepTable, SWT.NONE);
+        colFields.setText("Fields");
+        colFields.setWidth(150);
 
         stepTable.addListener(SWT.Selection, e -> updateButtonStates());
         stepTable.addListener(SWT.MouseDoubleClick, e -> onEditStep());
@@ -157,6 +160,10 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
             item.setText(0, step.label());
             item.setText(1, kindLabel(step.kind()));
             item.setText(2, step.prompt().isBlank() ? NONE : step.prompt());
+            var fieldsText = step.fields().isEmpty() ? "-" : step.fields().stream()
+                    .map(f -> f.required() ? f.label() + "*" : f.label())
+                    .collect(java.util.stream.Collectors.joining(", "));
+            item.setText(3, fieldsText);
         }
         updateButtonStates();
     }
@@ -285,6 +292,13 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
         private Text txtLabel;
         private Combo cmbKind;
         private Combo cmbPrompt;
+        private Table fieldsTable;
+        private Text txtHint;
+        private Text txtInstruction;
+        private Button btnFieldAdd;
+        private Button btnFieldEdit;
+        private Button btnFieldRemove;
+        private final java.util.List<QueryToSourceConfig.StepField> currentFields = new java.util.ArrayList<>();
         private QueryStep stepResult;
 
         StepDialog(Shell parent, QueryStep initialStep) {
@@ -296,8 +310,8 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
         public void create() {
             super.create();
             setTitle(initialStep == null ? "Add Step" : "Edit Step");
-            setMessage("Label, step kind, and the command/skill prompt to run.");
-            getShell().setSize(480, 280);
+            setMessage("Label, step kind, prompt, required fields, hint, and instruction.");
+            getShell().setSize(500, 450);
         }
 
         @Override
@@ -329,6 +343,66 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
             addLabel(container, "Prompt:");
             cmbPrompt = buildPromptCombo(container, initialStep != null ? initialStep.prompt() : "");
 
+            var fieldsLabel = new Label(container, SWT.NONE);
+            fieldsLabel.setText("Fields:");
+            fieldsLabel.setLayoutData(new GridData(SWT.RIGHT, SWT.TOP, false, false));
+
+            var fieldsComposite = new Composite(container, SWT.NONE);
+            fieldsComposite.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+            fieldsComposite.setLayout(new GridLayout(2, false));
+
+            fieldsTable = new Table(fieldsComposite, SWT.CHECK | SWT.BORDER | SWT.FULL_SELECTION | SWT.SINGLE);
+            fieldsTable.setHeaderVisible(true);
+            fieldsTable.setLinesVisible(true);
+            var fieldTableGd = new GridData(SWT.FILL, SWT.FILL, true, true);
+            fieldTableGd.heightHint = 80;
+            fieldsTable.setLayoutData(fieldTableGd);
+
+            var fieldCol = new TableColumn(fieldsTable, SWT.NONE);
+            fieldCol.setText("Field Label");
+            fieldCol.setWidth(200);
+            fieldsTable.addListener(SWT.Selection, e -> updateFieldButtonStates());
+
+            var fieldBtnComposite = new Composite(fieldsComposite, SWT.NONE);
+            fieldBtnComposite.setLayoutData(new GridData(SWT.FILL, SWT.TOP, false, false));
+            fieldBtnComposite.setLayout(new GridLayout(1, false));
+
+            btnFieldAdd = new Button(fieldBtnComposite, SWT.PUSH);
+            btnFieldAdd.setText("Add...");
+            btnFieldAdd.setLayoutData(new GridData(SWT.FILL, SWT.TOP, false, false));
+            btnFieldAdd.addListener(SWT.Selection, e -> onAddField());
+
+            btnFieldEdit = new Button(fieldBtnComposite, SWT.PUSH);
+            btnFieldEdit.setText("Edit...");
+            btnFieldEdit.setEnabled(false);
+            btnFieldEdit.setLayoutData(new GridData(SWT.FILL, SWT.TOP, false, false));
+            btnFieldEdit.addListener(SWT.Selection, e -> onEditField());
+
+            btnFieldRemove = new Button(fieldBtnComposite, SWT.PUSH);
+            btnFieldRemove.setText("Remove");
+            btnFieldRemove.setEnabled(false);
+            btnFieldRemove.setLayoutData(new GridData(SWT.FILL, SWT.TOP, false, false));
+            btnFieldRemove.addListener(SWT.Selection, e -> onRemoveField());
+
+            if (initialStep != null) {
+                currentFields.addAll(initialStep.fields());
+                refreshFieldsTable();
+            }
+
+            addLabel(container, "Hint:");
+            txtHint = new Text(container, SWT.BORDER | SWT.WRAP);
+            txtHint.setText(initialStep != null ? initialStep.hint() : "");
+            var hintGd = new GridData(SWT.FILL, SWT.CENTER, true, false);
+            hintGd.heightHint = 40;
+            txtHint.setLayoutData(hintGd);
+
+            addLabel(container, "Instruction:");
+            txtInstruction = new Text(container, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL);
+            txtInstruction.setText(initialStep != null ? initialStep.instruction() : "");
+            var instrGd = new GridData(SWT.FILL, SWT.FILL, true, true);
+            instrGd.heightHint = 80;
+            txtInstruction.setLayoutData(instrGd);
+
             return area;
         }
 
@@ -337,12 +411,67 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
             stepResult = new QueryStep(
                     txtLabel.getText().trim(),
                     kindFromIndex(cmbKind.getSelectionIndex()),
-                    promptValue(cmbPrompt));
+                    promptValue(cmbPrompt),
+                    new java.util.ArrayList<>(currentFields),
+                    txtInstruction.getText().trim(),
+                    txtHint.getText().trim());
             super.okPressed();
         }
 
         QueryStep getResult() {
             return stepResult;
+        }
+
+        private void refreshFieldsTable() {
+            fieldsTable.removeAll();
+            for (var field : currentFields) {
+                var item = new TableItem(fieldsTable, SWT.NONE);
+                item.setText(0, field.label());
+                item.setChecked(field.required());
+            }
+            updateFieldButtonStates();
+        }
+
+        private void updateFieldButtonStates() {
+            int idx = fieldsTable.getSelectionIndex();
+            boolean selected = idx >= 0;
+            btnFieldEdit.setEnabled(selected);
+            btnFieldRemove.setEnabled(selected);
+        }
+
+        private void onAddField() {
+            var dlg = new org.eclipse.jface.dialogs.InputDialog(
+                    getShell(), "Add Field", "Field label:", "", null);
+            if (dlg.open() == org.eclipse.jface.dialogs.IDialogConstants.OK_ID) {
+                var label = dlg.getValue().trim();
+                if (!label.isEmpty()) {
+                    currentFields.add(new QueryToSourceConfig.StepField(label, true));
+                    refreshFieldsTable();
+                }
+            }
+        }
+
+        private void onEditField() {
+            int idx = fieldsTable.getSelectionIndex();
+            if (idx < 0) return;
+            var field = currentFields.get(idx);
+            var dlg = new org.eclipse.jface.dialogs.InputDialog(
+                    getShell(), "Edit Field", "Field label:", field.label(), null);
+            if (dlg.open() == org.eclipse.jface.dialogs.IDialogConstants.OK_ID) {
+                var label = dlg.getValue().trim();
+                if (!label.isEmpty()) {
+                    currentFields.set(idx, new QueryToSourceConfig.StepField(label, field.required()));
+                    refreshFieldsTable();
+                    fieldsTable.select(idx);
+                }
+            }
+        }
+
+        private void onRemoveField() {
+            int idx = fieldsTable.getSelectionIndex();
+            if (idx < 0) return;
+            currentFields.remove(idx);
+            refreshFieldsTable();
         }
     }
 }

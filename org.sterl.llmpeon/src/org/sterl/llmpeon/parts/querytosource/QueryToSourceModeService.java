@@ -99,27 +99,54 @@ public class QueryToSourceModeService {
     }
 
     public String messageFor(QueryStep step, String userText) {
+        return messageFor(step, userText, java.util.Map.of());
+    }
+
+    public String messageFor(QueryStep step, String userText, java.util.Map<String, String> fieldValues) {
         var input = formatInput(userText);
         var label = step.label().isBlank() ? step.kind().name() : step.label();
+        var fieldsBlock = formatFieldsBlock(fieldValues);
+        var instructionBlock = step.instruction().isBlank()
+                ? "" : "[Additional Instructions]\n" + step.instruction().strip();
+        var parts = new java.util.ArrayList<String>();
+        if (!fieldsBlock.isEmpty()) parts.add(fieldsBlock);
+        if (!instructionBlock.isEmpty()) parts.add(instructionBlock);
+        parts.add(input);
+        var fullInput = String.join("\n\n", parts);
         return switch (step.kind()) {
             case TRANSFORM -> """
                     [Query-to-Source: %s]
                     Apply the step instructions to the following input.
 
-                    %s""".formatted(label, input);
+                    %s""".formatted(label, fullInput);
             case GENERATE -> """
                     [Query-to-Source: %s]
                     Generate the sources for this step following the instructions exactly. \
                     Use the input below and any files or context from earlier in this session.
 
-                    %s""".formatted(label, input);
+                    %s""".formatted(label, fullInput);
             case REVIEW -> """
                     [Query-to-Source: %s]
                     Review against the step instructions. Report problems and suggested fixes in the \
                     chat; do not modify files unless the instructions explicitly require it.
 
-                    %s""".formatted(label, input);
+                    %s""".formatted(label, fullInput);
         };
+    }
+
+    private static String formatFieldsBlock(java.util.Map<String, String> fieldValues) {
+        if (fieldValues == null || fieldValues.isEmpty()) return "";
+        var sb = new StringBuilder();
+        for (var entry : fieldValues.entrySet()) {
+            sb.append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    public java.util.Optional<QueryStep> getNextStep() {
+        var steps = config.steps();
+        int next = getCompletedStepIndex() + 1;
+        return (next >= 0 && next < steps.size()) ? java.util.Optional.of(steps.get(next)) : java.util.Optional.empty();
     }
 
     static String formatInput(String userText) {

@@ -57,6 +57,7 @@ import org.sterl.llmpeon.parts.config.VoicePreferenceInitializer;
 import org.sterl.llmpeon.parts.model.UserContext;
 import org.sterl.llmpeon.parts.monitor.EclipseAiMonitor;
 import org.sterl.llmpeon.parts.querytosource.QueryToSourceModeService;
+import org.sterl.llmpeon.parts.querytosource.StepInputDialog;
 import org.sterl.llmpeon.parts.shared.BuildDiagnosticsUtil;
 import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.parts.shared.IoUtils;
@@ -122,6 +123,7 @@ public class AIChatView implements EclipseAiMonitor {
     private ChatMarkdownWidget chatHistory;
     private Composite inputBlock;
     private FileChangeReviewWidget fileChangeReview;
+    private org.eclipse.swt.widgets.Label queryHintLabel;
     private UserInputWidget chatInput;
     private UserQuestionWidget questionWidget;
     private QueryToSourceBarWidget queryBar;
@@ -168,6 +170,13 @@ public class AIChatView implements EclipseAiMonitor {
         UserInputWidget.setDropActiveProjectSupplier(userContext::getCurrentProject);
 
         fileChangeReview = new FileChangeReviewWidget(inputBlock, SWT.NONE, this::undoFileChanges, this::keepFileChanges);
+
+        queryHintLabel = new org.eclipse.swt.widgets.Label(inputBlock, SWT.WRAP);
+        queryHintLabel.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        GridData hintGd = new GridData(SWT.FILL, SWT.TOP, true, false);
+        hintGd.exclude = true;
+        queryHintLabel.setLayoutData(hintGd);
+        queryHintLabel.setVisible(false);
 
         chatInput = new UserInputWidget(inputBlock, SWT.NONE,
             this::doSendMessage,
@@ -761,6 +770,7 @@ public class AIChatView implements EclipseAiMonitor {
     private void updateInputForMode() {
         boolean qs = aiService.getPeonMode() == PeonMode.QUERY_TO_SOURCE;
         setControlExcluded(queryBar, !qs);
+        setControlExcluded(queryHintLabel, !qs);
         if (qs) {
             var config = aiService.getQueryToSourceMode().getConfig();
             queryBar.setSteps(config.steps());
@@ -783,6 +793,15 @@ public class AIChatView implements EclipseAiMonitor {
         boolean projectAvailable = project != null && project.isOpen();
         int completedStepIndex = aiService.getQueryToSourceMode().getCompletedStepIndex();
         queryBar.updateState(actionsBar.isWorking(), projectAvailable, completedStepIndex);
+
+        // Update query hint
+        var mode = aiService.getQueryToSourceMode();
+        var next = mode.getNextStep();
+        boolean showHint = next.isPresent() && StringUtil.hasValue(next.get().hint());
+        setControlExcluded(queryHintLabel, !showHint);
+        if (showHint) {
+            queryHintLabel.setText("💡 " + next.get().label() + ": " + next.get().hint());
+        }
     }
 
     private void onRunStep(int stepIndex, QueryStep step) {
@@ -821,8 +840,18 @@ public class AIChatView implements EclipseAiMonitor {
             return;
         }
 
+        // Collect input fields if step defines any
+        java.util.Map<String, String> fieldValues = java.util.Map.of();
+        if (!step.fields().isEmpty()) {
+            var dialog = new StepInputDialog(parent.getShell(), step.label(), step.fields());
+            if (dialog.open() != org.eclipse.jface.dialogs.IDialogConstants.OK_ID) {
+                return;  // User canceled
+            }
+            fieldValues = dialog.getResult();
+        }
+
         active.setOneShotSystemPrompt(body);
-        var message = mode.messageFor(step, userText);
+        var message = mode.messageFor(step, userText, fieldValues);
         mode.markPending(stepIndex, step);
         chatHistory.appendMessage(new SimpleMessage(Type.USER, message));
         chatInput.clearText();
