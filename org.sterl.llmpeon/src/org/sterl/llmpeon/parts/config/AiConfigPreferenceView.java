@@ -1,6 +1,12 @@
 package org.sterl.llmpeon.parts.config;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.TreeSet;
+
 import org.eclipse.core.runtime.preferences.InstanceScope;
+import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.jface.preference.BooleanFieldEditor;
@@ -20,7 +26,9 @@ import org.eclipse.ui.IWorkbenchPreferencePage;
 import org.eclipse.ui.preferences.ScopedPreferenceStore;
 import org.sterl.llmpeon.ai.AiProvider;
 import org.sterl.llmpeon.ai.LlmConfig;
+import org.sterl.llmpeon.command.CommandService;
 import org.sterl.llmpeon.parts.PeonConstants;
+import org.sterl.llmpeon.skill.SkillService;
 
 public class AiConfigPreferenceView extends FieldEditorPreferencePage implements IWorkbenchPreferencePage {
 
@@ -82,6 +90,7 @@ public class AiConfigPreferenceView extends FieldEditorPreferencePage implements
 
         addField(new StringFieldEditor(PeonConstants.PREF_SKILL_DIRECTORY, "Skills directory:", getFieldEditorParent()));
         addField(new StringFieldEditor(PeonConstants.PREF_COMMAND_DIRECTORY, "Commands directory:", getFieldEditorParent()));
+        buildQueryToSourceSettingsButton();
         addField(new StringFieldEditor(PeonConstants.PREF_UPDATE_URL, "Update URL:", getFieldEditorParent()));
         buildSettingsVersionLabel();
 
@@ -151,6 +160,37 @@ public class AiConfigPreferenceView extends FieldEditorPreferencePage implements
             providerEditor.load();
             apiKeyEditor.load();
         });
+    }
+
+    private void buildQueryToSourceSettingsButton() {
+        Button btnQts = new Button(getFieldEditorParent(), SWT.PUSH);
+        btnQts.setText("Query-to-Source Settings...");
+        btnQts.setToolTipText("Configure the Query-to-Source pipeline steps");
+        GridData gd = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        gd.horizontalSpan = 2;
+        btnQts.setLayoutData(gd);
+        btnQts.addListener(SWT.Selection, e -> {
+            var config = QueryToSourcePreferenceInitializer.load();
+            var dialog = new QueryToSourceSettingsDialog(getShell(), config, availablePromptNames());
+            if (dialog.open() == IDialogConstants.OK_ID && dialog.getResult() != null) {
+                QueryToSourcePreferenceInitializer.save(dialog.getResult());
+            }
+        });
+    }
+
+    private List<String> availablePromptNames() {
+        var set = new TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+        try {
+            var skillDir = getPreferenceStore().getString(PeonConstants.PREF_SKILL_DIRECTORY);
+            new SkillService(skillDir.isBlank() ? null : Path.of(skillDir))
+                    .getAllLoadedSkills().forEach(s -> set.add(s.name()));
+        } catch (Exception ignored) {}
+        try {
+            var cmdDir = getPreferenceStore().getString(PeonConstants.PREF_COMMAND_DIRECTORY);
+            new CommandService(cmdDir.isBlank() ? null : Path.of(cmdDir))
+                    .getAllLoadedCommands().forEach(c -> set.add(c.name()));
+        } catch (Exception ignored) {}
+        return new ArrayList<>(set);
     }
 
     @Override

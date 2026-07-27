@@ -16,7 +16,7 @@ import org.sterl.llmpeon.querytosource.StepKind;
 
 /**
  * Wizard action bar for {@link org.sterl.llmpeon.PeonMode#QUERY_TO_SOURCE}: one button per
- * configured pipeline step plus a settings gear.
+ * configured pipeline step.
  *
  * <p>Once a step completes successfully in the current session, its button is marked done
  * (checkmark) and disabled — see {@link #updateState(boolean, boolean, int)}. Progress resets
@@ -26,7 +26,6 @@ import org.sterl.llmpeon.querytosource.StepKind;
 public class QueryToSourceBarWidget extends Composite {
 
     private final Composite buttonRow;
-    private final Button btnSettings;
     private final BiConsumer<Integer, QueryStep> onRunStep;
 
     private final List<QueryStep> steps = new ArrayList<>();
@@ -34,8 +33,7 @@ public class QueryToSourceBarWidget extends Composite {
     private boolean showStepNumbers = false;
 
     public QueryToSourceBarWidget(Composite parent, int style,
-            BiConsumer<Integer, QueryStep> onRunStep,
-            Runnable onOpenSettings) {
+            BiConsumer<Integer, QueryStep> onRunStep) {
         super(parent, style);
         this.onRunStep = onRunStep;
 
@@ -53,11 +51,6 @@ public class QueryToSourceBarWidget extends Composite {
         buttonRow = new Composite(this, SWT.NONE);
         buttonRow.setLayout(new RowLayout(SWT.HORIZONTAL));
         buttonRow.setLayoutData(new RowData(SWT.DEFAULT, SWT.DEFAULT));
-
-        btnSettings = new Button(this, SWT.PUSH);
-        btnSettings.setText("\u2699");
-        btnSettings.setToolTipText("Query-to-Source settings");
-        btnSettings.addListener(SWT.Selection, e -> onOpenSettings.run());
     }
 
     /** Rebuilds step buttons from the configured pipeline (preserves settings button). */
@@ -118,7 +111,6 @@ public class QueryToSourceBarWidget extends Composite {
      *                           none); steps at or before this index are shown as done and disabled
      */
     public void updateState(boolean working, boolean projectAvailable, int completedStepIndex) {
-        btnSettings.setEnabled(!working);
         for (int i = 0; i < stepButtons.size(); i++) {
             var btn = stepButtons.get(i);
             var step = steps.get(i);
