@@ -762,7 +762,9 @@ public class AIChatView implements EclipseAiMonitor {
         boolean qs = aiService.getPeonMode() == PeonMode.QUERY_TO_SOURCE;
         setControlExcluded(queryBar, !qs);
         if (qs) {
-            queryBar.setSteps(aiService.getQueryToSourceMode().getConfig().steps());
+            var config = aiService.getQueryToSourceMode().getConfig();
+            queryBar.setSteps(config.steps());
+            queryBar.setShowStepNumbers(config.showStepNumbers());
             updateQueryBarState();
         }
         inputBlock.layout(true, true);
@@ -897,6 +899,7 @@ public class AIChatView implements EclipseAiMonitor {
             QueryToSourcePreferenceInitializer.save(cfg);
             mode.setConfig(cfg);
             queryBar.setSteps(cfg.steps());
+            queryBar.setShowStepNumbers(cfg.showStepNumbers());
             updateQueryBarState();
         }
     }

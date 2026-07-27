@@ -10,8 +10,9 @@ import java.util.List;
  * rules live in those prompts.</p>
  *
  * @param steps ordered pipeline steps (label, kind, prompt name)
+ * @param showStepNumbers whether to display step numbers in the wizard bar buttons
  */
-public record QueryToSourceConfig(List<QueryStep> steps) {
+public record QueryToSourceConfig(List<QueryStep> steps, boolean showStepNumbers) {
 
     /**
      * One configurable pipeline step.
@@ -32,6 +33,10 @@ public record QueryToSourceConfig(List<QueryStep> steps) {
         steps = steps == null ? List.of() : List.copyOf(steps);
     }
 
+    public QueryToSourceConfig(List<QueryStep> steps) {
+        this(steps, false);
+    }
+
     /** Returns {@link #defaults()} when this config has no steps (e.g. legacy JSON). */
     public QueryToSourceConfig orDefaultsIfEmpty() {
         return steps.isEmpty() ? defaults() : this;
@@ -44,6 +49,6 @@ public record QueryToSourceConfig(List<QueryStep> steps) {
                 new QueryStep("DAO 생성", StepKind.GENERATE, ""),
                 new QueryStep("표준 검토", StepKind.REVIEW, ""),
                 new QueryStep("Service 생성", StepKind.GENERATE, ""),
-                new QueryStep("표준 검토", StepKind.REVIEW, "")));
+                new QueryStep("표준 검토", StepKind.REVIEW, "")), false);
     }
 }

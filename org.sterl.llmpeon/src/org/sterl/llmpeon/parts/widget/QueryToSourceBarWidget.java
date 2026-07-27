@@ -31,6 +31,7 @@ public class QueryToSourceBarWidget extends Composite {
 
     private final List<QueryStep> steps = new ArrayList<>();
     private final List<Button> stepButtons = new ArrayList<>();
+    private boolean showStepNumbers = false;
 
     public QueryToSourceBarWidget(Composite parent, int style,
             BiConsumer<Integer, QueryStep> onRunStep,
@@ -68,7 +69,7 @@ public class QueryToSourceBarWidget extends Composite {
             var index = i;
             var step = steps.get(i);
             var btn = new Button(buttonRow, SWT.PUSH);
-            btn.setText(labelFor(step, false));
+            btn.setText(labelFor(index, step, false));
             btn.setToolTipText(tooltipFor(step, false));
             btn.addListener(SWT.Selection, e -> onRunStep.accept(index, step));
             stepButtons.add(btn);
@@ -79,8 +80,16 @@ public class QueryToSourceBarWidget extends Composite {
         if (p != null) p.layout(new Control[]{ this });
     }
 
-    private static String labelFor(QueryStep step, boolean done) {
+    /** Sets whether to show step numbers in button labels. */
+    public void setShowStepNumbers(boolean show) {
+        this.showStepNumbers = show;
+    }
+
+    private String labelFor(int index, QueryStep step, boolean done) {
         var text = step.label().isBlank() ? step.kind().name() : step.label();
+        if (showStepNumbers) {
+            text = (index + 1) + ". " + text;
+        }
         return done ? "\u2713 " + text : text;
     }
 
@@ -116,7 +125,7 @@ public class QueryToSourceBarWidget extends Composite {
             boolean done = i <= completedStepIndex;
             boolean needsProject = step.kind() != StepKind.TRANSFORM;
             btn.setEnabled(!working && !done && (!needsProject || projectAvailable));
-            btn.setText(labelFor(step, done));
+            btn.setText(labelFor(i, step, done));
             btn.setToolTipText(tooltipFor(step, done));
         }
         buttonRow.layout(true, true);

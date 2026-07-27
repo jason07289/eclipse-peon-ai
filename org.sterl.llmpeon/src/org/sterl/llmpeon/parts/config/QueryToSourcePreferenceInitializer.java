@@ -23,6 +23,7 @@ public class QueryToSourcePreferenceInitializer extends AbstractPreferenceInitia
     public void initializeDefaultPreferences() {
         IEclipsePreferences defaults = DefaultScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
         defaults.put(PeonConstants.PREF_QUERY_TO_SOURCE_CONFIG, toJson(QueryToSourceConfig.defaults()));
+        defaults.putBoolean(PeonConstants.PREF_QUERY_TO_SOURCE_SHOW_STEP_NUMBERS, false);
     }
 
     public static QueryToSourceConfig load() {

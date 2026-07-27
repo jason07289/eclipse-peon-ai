@@ -43,8 +43,10 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
     private Button btnRemove;
     private Button btnUp;
     private Button btnDown;
+    private Button chkShowStepNumbers;
 
     private final List<QueryStep> steps = new ArrayList<>();
+    private boolean showStepNumbers;
     private QueryToSourceConfig result;
 
     public QueryToSourceSettingsDialog(Shell parent, QueryToSourceConfig initial, List<String> availablePrompts) {
@@ -128,7 +130,21 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
         btnDown.setLayoutData(new GridData(SWT.FILL, SWT.TOP, false, false));
         btnDown.addListener(SWT.Selection, e -> moveSelected(1));
 
+        var optionsLabel = new Label(container, SWT.NONE);
+        optionsLabel.setText("Display options:");
+        var optionsGd = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        optionsGd.horizontalSpan = 2;
+        optionsLabel.setLayoutData(optionsGd);
+
+        chkShowStepNumbers = new Button(container, SWT.CHECK);
+        chkShowStepNumbers.setText("Show step numbers (1, 2, 3, ...)");
+        chkShowStepNumbers.setSelection(initial.showStepNumbers());
+        var chkGd = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        chkGd.horizontalSpan = 2;
+        chkShowStepNumbers.setLayoutData(chkGd);
+
         steps.addAll(initial.steps());
+        showStepNumbers = initial.showStepNumbers();
         refreshStepTable();
 
         return area;
@@ -210,7 +226,7 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
 
     @Override
     protected void okPressed() {
-        result = new QueryToSourceConfig(new ArrayList<>(steps));
+        result = new QueryToSourceConfig(new ArrayList<>(steps), chkShowStepNumbers.getSelection());
         super.okPressed();
     }
 
