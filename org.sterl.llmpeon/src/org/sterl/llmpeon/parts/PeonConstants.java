@@ -28,6 +28,8 @@ public interface PeonConstants {
     String PREF_QUERY_PARAMS       = "llm.queryParams";
     String PREF_HEADER_PARAMS      = "llm.headerParams";
 
+    String PREF_QUERY_TO_SOURCE_CONFIG = "queryToSource.config"; // JSON: QueryToSourceConfig
+
     String PREF_MCP_SERVERS  = "mcp.servers";   // JSON: List<McpServerConfig>
     String PREF_MCP_ENABLED  = "mcp.enabled";   // boolean
 

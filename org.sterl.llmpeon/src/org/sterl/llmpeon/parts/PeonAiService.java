@@ -10,6 +10,7 @@ import org.eclipse.core.resources.IProject;
 import org.sterl.llmpeon.AbstractChatService;
 import org.sterl.llmpeon.AiDeveloperService;
 import org.sterl.llmpeon.AiPlannerService;
+import org.sterl.llmpeon.AiQueryToSourceService;
 import org.sterl.llmpeon.PeonMode;
 import org.sterl.llmpeon.StandingOrdersBuilder.MessageProvider;
 import org.sterl.llmpeon.ai.ConfiguredModel;
@@ -19,6 +20,8 @@ import org.sterl.llmpeon.command.CommandService;
 import org.sterl.llmpeon.parts.agent.AgentModeService;
 import org.sterl.llmpeon.parts.agentsmd.AgentsMdService;
 import org.sterl.llmpeon.parts.config.LlmPreferenceInitializer;
+import org.sterl.llmpeon.parts.config.QueryToSourcePreferenceInitializer;
+import org.sterl.llmpeon.parts.querytosource.QueryToSourceModeService;
 import org.sterl.llmpeon.parts.config.McpConnectionService;
 import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.parts.shared.JdtUtil;
@@ -61,6 +64,8 @@ public class PeonAiService implements MessageProvider {
     private final AgentsMdService agentsMdService;
     private final AiDeveloperService developerService;
     private final AiPlannerService plannerService;
+    private final AiQueryToSourceService queryToSourceService;
+    private final QueryToSourceModeService queryToSourceMode;
     private final AgentModeService agentMode;
     private final AgentModeTool agentModeTool;
     private final McpConnectionService mcpConnectionService;
@@ -83,6 +88,8 @@ public class PeonAiService implements MessageProvider {
         this.configuredModel = configuredModel;
         this.plannerService = plannerService;
         this.developerService = developerService;
+        this.queryToSourceService = null;
+        this.queryToSourceMode = null;
         this.toolService = null;
         this.skillService = null;
         this.commandService = null;
@@ -135,6 +142,10 @@ public class PeonAiService implements MessageProvider {
         developerService = new AiDeveloperService(configuredModel, toolService);
         plannerService   = new AiPlannerService(configuredModel, toolService);
 
+        // Query-to-Source uses its own service (isolated memory) but the shared edit tools
+        queryToSourceService = new AiQueryToSourceService(configuredModel, toolService);
+        queryToSourceMode    = new QueryToSourceModeService(queryToSourceService);
+
         // Agent mode uses separate instances with isolated memory
         var agentDev  = new AiDeveloperService(configuredModel, toolService);
         var agentPlan = new AiPlannerService(configuredModel, toolService);
@@ -186,9 +197,10 @@ public class PeonAiService implements MessageProvider {
     
     public AbstractChatService getActiveService() {
         return switch (getPeonMode()) {
-            case DEV   -> getDeveloperService();
-            case PLAN  -> getPlannerService();
-            case AGENT -> getAgentMode().getActiveService();
+            case DEV             -> getDeveloperService();
+            case PLAN            -> getPlannerService();
+            case QUERY_TO_SOURCE -> getQueryToSourceService();
+            case AGENT           -> getAgentMode().getActiveService();
         };
     }
 
@@ -329,6 +341,39 @@ public class PeonAiService implements MessageProvider {
             getToolService().removeTool(getAgentModeTools());
             getAgentMode().reset();
         }
+        if (mode == PeonMode.QUERY_TO_SOURCE) {
+            queryToSourceMode.setConfig(QueryToSourcePreferenceInitializer.load());
+            queryToSourceMode.reset();
+        }
+    }
+
+    public AiQueryToSourceService getQueryToSourceService() {
+        return queryToSourceService;
+    }
+
+    public QueryToSourceModeService getQueryToSourceMode() {
+        return queryToSourceMode;
+    }
+
+    /**
+     * Resolves the body of a prompt referenced by name, searching commands first then skills.
+     * Returns {@code null} when the name is blank or no matching prompt is loaded.
+     */
+    public String resolvePromptBody(String name) {
+        if (name == null || name.isBlank()) return null;
+        var cmd = commandService.get(name);
+        if (cmd.isPresent()) return cmd.get().readBody();
+        var skill = skillService.get(name);
+        if (skill.isPresent()) return skill.get().readBody();
+        return null;
+    }
+
+    /** Names of all loaded commands and skills, de-duplicated and sorted case-insensitively. */
+    public java.util.List<String> availablePromptNames() {
+        var set = new java.util.TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+        commandService.getAllLoadedCommands().forEach(c -> set.add(c.name()));
+        skillService.getAllLoadedSkills().forEach(s -> set.add(s.name()));
+        return new java.util.ArrayList<>(set);
     }
     
     public PeonMode getPeonMode() {

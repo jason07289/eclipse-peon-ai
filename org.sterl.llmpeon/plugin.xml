@@ -42,6 +42,7 @@
       <initializer class="org.sterl.llmpeon.parts.config.LlmPreferenceInitializer"/>
       <initializer class="org.sterl.llmpeon.parts.config.McpPreferenceInitializer"/>
       <initializer class="org.sterl.llmpeon.parts.config.VoicePreferenceInitializer"/>
+      <initializer class="org.sterl.llmpeon.parts.config.QueryToSourcePreferenceInitializer"/>
    </extension>
 
 </plugin>

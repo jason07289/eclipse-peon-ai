@@ -18,6 +18,8 @@ Eclipse Peon AI is an Eclipse RCP plugin that integrates a lightweight, context-
 - **Text Editing**: Full undo/redo support (Ctrl+Z / Ctrl+Shift+Z) with context menu for copy, paste, cut operations
 - **Local LLM Support**: Works with Ollama for privacy-focused local inference
 - **Multi-Provider**: Supports various LLM providers through LangChain4j
+- **Query-to-Source**: Guided **SQL/XML → source** workflows with a configurable step pipeline
+  and team rules in command/skill prompts — see [Query-to-Source](/usage/query-to-source)
 
 ![example](./assets/example.png)
 
@@ -75,6 +77,8 @@ The AI assistant has access to several tools:
 2. **Generate Tests**: Ask "Write unit tests for the selected class"
 3. **Refactor**: Select code and ask "How can I improve this?"
 4. **Debug**: Paste error messages and ask "What's causing this?"
+5. **Query-to-Source**: Run a team-defined pipeline (standardize SQL → generate DAO/mapper →
+   review) — [Query-to-Source mode](/usage/query-to-source)
 
 ::: info "CTRL+Enter"
 You can also send messages with `CTRL+Enter` or `CMD+Enter` - if the AI is working, the message is added to the history - best effort to add message during a tool loop.

@@ -51,9 +51,13 @@ import org.sterl.llmpeon.ai.LlmConfig;
 import org.sterl.llmpeon.parts.config.LlmPreferenceInitializer;
 import org.sterl.llmpeon.parts.config.McpPreferenceInitializer;
 import org.sterl.llmpeon.parts.config.PeonUpdateService;
+import org.sterl.llmpeon.parts.config.QueryToSourcePreferenceInitializer;
+import org.sterl.llmpeon.parts.config.QueryToSourceSettingsDialog;
 import org.sterl.llmpeon.parts.config.VoicePreferenceInitializer;
 import org.sterl.llmpeon.parts.model.UserContext;
 import org.sterl.llmpeon.parts.monitor.EclipseAiMonitor;
+import org.sterl.llmpeon.parts.querytosource.QueryToSourceModeService;
+import org.sterl.llmpeon.parts.shared.BuildDiagnosticsUtil;
 import org.sterl.llmpeon.parts.shared.EclipseUtil;
 import org.sterl.llmpeon.parts.shared.IoUtils;
 import org.sterl.llmpeon.parts.shared.SimpleDiff;
@@ -63,10 +67,13 @@ import org.sterl.llmpeon.parts.widget.ActionsBarWidget;
 import org.sterl.llmpeon.parts.widget.ChatMarkdownWidget;
 import org.sterl.llmpeon.parts.widget.FileChangeReviewWidget;
 import org.sterl.llmpeon.parts.widget.FileChangeReviewWidget.FileChange;
+import org.sterl.llmpeon.parts.widget.QueryToSourceBarWidget;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget.SkillMenuSelection;
 import org.sterl.llmpeon.parts.widget.UserInputWidget;
 import org.sterl.llmpeon.parts.widget.UserQuestionWidget;
+import org.sterl.llmpeon.querytosource.QueryToSourceConfig.QueryStep;
+import org.sterl.llmpeon.querytosource.StepKind;
 import org.sterl.llmpeon.shared.OnPartialAiResponse;
 import org.sterl.llmpeon.shared.FileUtils;
 import org.sterl.llmpeon.shared.StringUtil;
@@ -117,6 +124,7 @@ public class AIChatView implements EclipseAiMonitor {
     private FileChangeReviewWidget fileChangeReview;
     private UserInputWidget chatInput;
     private UserQuestionWidget questionWidget;
+    private QueryToSourceBarWidget queryBar;
 
     private final UserContext userContext = new UserContext();
 
@@ -184,6 +192,15 @@ public class AIChatView implements EclipseAiMonitor {
             aiService::withThinking
         );
 
+        queryBar = new QueryToSourceBarWidget(inputBlock, SWT.NONE,
+            this::onRunStep,
+            this::onOpenQueryToSourceSettings
+        );
+        GridData qbgd = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        qbgd.exclude = true;
+        queryBar.setLayoutData(qbgd);
+        queryBar.setVisible(false);
+
         statusLine = new StatusLineWidget(inputBlock, SWT.NONE,
             this::onPinChange,
             this::onSkillsToggle,
@@ -217,6 +234,7 @@ public class AIChatView implements EclipseAiMonitor {
         var dateInfo = buildDateInfo();
         aiService.getDeveloperService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
         aiService.getPlannerService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
+        aiService.getQueryToSourceService().setStaticContext(Arrays.asList(SystemMessage.from(dateInfo)));
 
         chatInput.enableSlashCommands(() -> aiService.getCommandService().getCommands());
     }
@@ -233,7 +251,13 @@ public class AIChatView implements EclipseAiMonitor {
 
     private void onClear() {
         var s = aiService.getActiveService();
-        s.clear();
+        if (aiService.getPeonMode() == PeonMode.QUERY_TO_SOURCE) {
+            // also drops the remembered step progress, not just the chat memory
+            aiService.getQueryToSourceMode().reset();
+            updateQueryBarState();
+        } else {
+            s.clear();
+        }
         chatHistory.clear();
         keepFileChanges();
         statusLine.updateCompact(s.getContextSize(), s.getAutoCompactAfter());
@@ -335,6 +359,7 @@ public class AIChatView implements EclipseAiMonitor {
                 if (currentProject == null && aiService.getPeonMode() == PeonMode.AGENT) {
                     onModeChange(PeonMode.DEV);
                 }
+                updateQueryBarState();
                 refreshStatusLine();
             });
         }
@@ -380,8 +405,10 @@ public class AIChatView implements EclipseAiMonitor {
             if (aiService.getAgentMode().consumeImplementationRequest()) {
                 aiService.getAgentMode().startImplementation();
             }
+            handleQueryToSourceCompletion();
             refreshStatusLine();
             actionsBar.updateModeUI(aiService.getPeonMode(), isImplEnabled());
+            updateQueryBarState();
         });
     }
 
@@ -722,7 +749,156 @@ public class AIChatView implements EclipseAiMonitor {
         aiService.getAgentMode().setAutonomous(actionsBar.getAutonomous());
         aiService.setPeonMode(mode);
         refreshChat();
+        updateInputForMode();
         applyShellCommandConfirmation();
+    }
+
+    // -------------------------------------------------------------------------
+    // Query-to-Source wizard
+    // -------------------------------------------------------------------------
+
+    /** Shows the wizard step bar in QUERY_TO_SOURCE mode; chat input stays visible in all modes. */
+    private void updateInputForMode() {
+        boolean qs = aiService.getPeonMode() == PeonMode.QUERY_TO_SOURCE;
+        setControlExcluded(queryBar, !qs);
+        if (qs) {
+            queryBar.setSteps(aiService.getQueryToSourceMode().getConfig().steps());
+            updateQueryBarState();
+        }
+        inputBlock.layout(true, true);
+        inputBlock.getParent().layout(new Control[]{ inputBlock });
+    }
+
+    private void setControlExcluded(Control control, boolean excluded) {
+        if (control == null || control.isDisposed()) return;
+        ((GridData) control.getLayoutData()).exclude = excluded;
+        control.setVisible(!excluded);
+    }
+
+    private void updateQueryBarState() {
+        if (queryBar == null || queryBar.isDisposed()) return;
+        var project = userContext.getCurrentProject();
+        boolean projectAvailable = project != null && project.isOpen();
+        int completedStepIndex = aiService.getQueryToSourceMode().getCompletedStepIndex();
+        queryBar.updateState(actionsBar.isWorking(), projectAvailable, completedStepIndex);
+    }
+
+    private void onRunStep(int stepIndex, QueryStep step) {
+        if (actionsBar.isWorking()) return;
+        var mode = aiService.getQueryToSourceMode();
+        if (mode.isStepCompleted(stepIndex)) {
+            return;
+        }
+        if (StringUtil.hasNoValue(aiService.getModel())) {
+            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM, "No model configured — open Window > Preferences > Peon AI"));
+            return;
+        }
+        var active = mode.getService();
+        final var selection = userContext.getUserSelection();
+        final var needsSelection = !active.hasUserText(selection);
+        var userText = StringUtil.strip(chatInput.getText().trim()) + (needsSelection ? selection : "");
+        if (StringUtil.hasNoValue(userText) && active.getMessages().isEmpty()) {
+            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                    "Type a message in the chat input, or continue from an earlier turn."));
+            return;
+        }
+        if (QueryToSourceModeService.requiresProject(step)) {
+            var project = userContext.getCurrentProject();
+            if (project == null || !project.isOpen()) {
+                chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                        "Select an open project — this step needs workspace access."));
+                return;
+            }
+        }
+        var promptName = step.prompt();
+        var body = aiService.resolvePromptBody(promptName);
+        if (body == null) {
+            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                    "No prompt configured or loaded for step \"" + step.label()
+                    + "\". Configure it in Query-to-Source settings (\u2699)."));
+            return;
+        }
+
+        active.setOneShotSystemPrompt(body);
+        var message = mode.messageFor(step, userText);
+        mode.markPending(stepIndex, step);
+        chatHistory.appendMessage(new SimpleMessage(Type.USER, message));
+        chatInput.clearText();
+        lockWhileWorking(true);
+        scheduleQueryCall(active, message);
+    }
+
+    private void scheduleQueryCall(AbstractChatService active, String text) {
+        Job.create("Peon Query-to-Source", monitor -> {
+            monitor.beginTask("Arbeit, Arbeit!", 100);
+            monitorRef.set(monitor);
+            Exception ex = null;
+            try {
+                active.setUserContextInformations(this.standingOrders.build());
+                active.call(text, this);
+            } catch (ToolExecutionException e) {
+                if (!isCanceled() && !(e.getCause() instanceof CancellationException)) throw e;
+            } catch (Exception e) {
+                if (!isCanceled() || !(e instanceof CancellationException)) {
+                    ex = e;
+                    LOG.warn("Failed to call LLM " + aiService.getConfig(), e);
+                    onChatResponse(new SimpleMessage(Type.PROBLEM, e.getMessage()));
+                }
+            } finally {
+                monitor.done();
+                monitorRef.set(new NullProgressMonitor());
+                EclipseUtil.runInUiThread(parent, () -> lockWhileWorking(false));
+            }
+            return PeonConstants.status("Peon Query-to-Source", ex);
+        }).schedule();
+    }
+
+    /** After a pipeline step finishes: reflect transform output, or run a compile check. */
+    private void handleQueryToSourceCompletion() {
+        if (aiService.getPeonMode() != PeonMode.QUERY_TO_SOURCE) return;
+        var mode = aiService.getQueryToSourceMode();
+        int stepIndex = mode.getPendingStepIndex();
+        var step = mode.consumePendingStep();
+        if (step == null) return;
+        mode.markStepCompleted(stepIndex);
+        if (step.kind() == StepKind.GENERATE) {
+            runCompileCheck();
+        }
+    }
+
+    private void runCompileCheck() {
+        var project = userContext.getCurrentProject();
+        if (project == null || !project.isOpen()) return;
+        Job.create("Query-to-Source compile check", monitor -> {
+            try {
+                var errors = BuildDiagnosticsUtil.buildAndCollectErrors(project, monitor);
+                EclipseUtil.runInUiThread(parent, () -> {
+                    if (errors.isEmpty()) {
+                        chatHistory.appendMessage(new SimpleMessage(Type.TOOL,
+                                "Compile check: no errors in " + project.getName() + "."));
+                    } else {
+                        var msg = new StringBuilder("Compile check found " + errors.size() + " error(s):\n");
+                        errors.stream().limit(50).forEach(e -> msg.append("- ").append(e).append("\n"));
+                        chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM, msg.toString()));
+                    }
+                });
+                return PeonConstants.okStatus("Compile check done");
+            } catch (Exception e) {
+                return PeonConstants.errorStatus("Compile check failed", e);
+            }
+        }).schedule();
+    }
+
+    private void onOpenQueryToSourceSettings() {
+        var mode = aiService.getQueryToSourceMode();
+        var dialog = new QueryToSourceSettingsDialog(parent.getShell(), mode.getConfig(), aiService.availablePromptNames());
+        if (dialog.open() == org.eclipse.jface.dialogs.IDialogConstants.OK_ID && dialog.getResult() != null) {
+            var cfg = dialog.getResult();
+            QueryToSourcePreferenceInitializer.save(cfg);
+            mode.setConfig(cfg);
+            queryBar.setSteps(cfg.steps());
+            updateQueryBarState();
+        }
     }
 
     // TODO 29.03.2026 
@@ -867,6 +1043,7 @@ public class AIChatView implements EclipseAiMonitor {
         if (fileChangeReview != null && !fileChangeReview.isDisposed()) {
             fileChangeReview.setActionsEnabled(!value);
         }
+        updateQueryBarState();
         if (!value) chatHistory.hideLiveStatus();
         if (!value && questionWidget != null && questionWidget.isVisible()) {
             questionWidget.cancel();
@@ -877,8 +1054,8 @@ public class AIChatView implements EclipseAiMonitor {
             java.util.function.Consumer<String> onAnswer) {
         chatHistory.updateLiveResponseInUIThread("Wating for User...", 0, null);
         EclipseUtil.runInUiThread(parent, () -> {
-            ((GridData) chatInput.getLayoutData()).exclude = true;
-            chatInput.setVisible(false);
+            setControlExcluded(chatInput, true);
+            setControlExcluded(queryBar, true);
             ((GridData) questionWidget.getLayoutData()).exclude = false;
             questionWidget.setVisible(true);
             questionWidget.showQuestion(question, answers, a -> {
@@ -891,13 +1068,11 @@ public class AIChatView implements EclipseAiMonitor {
     }
 
     private void hideQuestion() {
-        ((GridData) chatInput.getLayoutData()).exclude = false;
-        chatInput.setVisible(true);
         ((GridData) questionWidget.getLayoutData()).exclude = true;
         questionWidget.setVisible(false);
         questionWidget.hideQuestion();
-        inputBlock.layout(true, true);
-        inputBlock.getParent().layout(new Control[]{ inputBlock });
+        // Restore the correct input area for the active mode.
+        updateInputForMode();
     }
 
     private void onSkillsToggle(boolean enabled) {

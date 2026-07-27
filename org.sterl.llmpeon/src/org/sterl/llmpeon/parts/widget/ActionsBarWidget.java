@@ -1,6 +1,5 @@
 package org.sterl.llmpeon.parts.widget;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -111,15 +110,15 @@ public class ActionsBarWidget extends Composite {
     private void buildAgentCombo(Consumer<PeonMode> onModeChange) {
         agentCombo = new Combo(this, SWT.READ_ONLY);
         agentCombo.setLayoutData(new RowData(100, SWT.DEFAULT));
-        agentCombo.setItems(Arrays.asList(PeonMode.values()).stream()
+        agentCombo.setItems(PeonMode.visibleValues().stream()
                 .map(PeonMode::getLabel)
                 .toArray(String[]::new));
-        agentCombo.select(1); // default: Peon-Dev
+        agentCombo.select(PeonMode.visibleValues().indexOf(PeonMode.DEV)); // default: dev
         agentCombo.setToolTipText("Select agent mode");
         agentCombo.addListener(SWT.Selection, e -> {
-            PeonMode selected = PeonMode.values()[agentCombo.getSelectionIndex()];
+            PeonMode selected = PeonMode.visibleValues().get(agentCombo.getSelectionIndex());
             if (selected == PeonMode.AGENT && !agentModeAvailable) {
-                agentCombo.select(PeonMode.DEV.ordinal());
+                selectMode(PeonMode.DEV);
                 agentCombo.setToolTipText("Peon-Agent requires a project to be selected");
                 return;
             }
@@ -127,6 +126,12 @@ public class ActionsBarWidget extends Composite {
             onModeChange.accept(selected);
         });
 	}
+
+    /** Select the given mode in the combo, ignoring hidden modes. */
+    private void selectMode(PeonMode mode) {
+        int idx = PeonMode.visibleValues().indexOf(mode);
+        if (idx >= 0) agentCombo.select(idx);
+    }
 
     /** Enable/disable controls while a request is in flight. */
     public void lockWhileWorking(boolean value) {
@@ -147,7 +152,7 @@ public class ActionsBarWidget extends Composite {
     public void updateModeUI(PeonMode mode, boolean implEnabled) {
         boolean isPlanLike = mode == PeonMode.PLAN || mode == PeonMode.AGENT;
         boolean isAgent = mode == PeonMode.AGENT;
-        agentCombo.select(mode.ordinal());
+        selectMode(mode);
         btnImplement.setEnabled(!this.working.get() && isPlanLike && implEnabled);
         boolean implVisibilityChanged = btnImplement.getVisible() != isPlanLike;
         if (implVisibilityChanged) {

@@ -47,7 +47,8 @@ export default defineConfig({
           text: 'Usage',
           items: [
             { text: 'Keyboard Shortcuts', link: '/usage/keyboard-shortcuts' },
-            { text: 'Context Selection', link: '/usage/selections' }
+            { text: 'Context Selection', link: '/usage/selections' },
+            { text: 'Query-to-Source', link: '/usage/query-to-source' }
           ]
         },
         {
