@@ -15,6 +15,7 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.MenuItem;
+import org.eclipse.swt.widgets.Sash;
 
 /**
  * Reusable auto-growing StyledText widget. The text area grows from a minimum of
@@ -26,6 +27,8 @@ public class TextInputWidget extends Composite {
     private final StyledText styledText;
     private final int maxRows;
     private final Runnable onReflow;
+    private Sash resizeSash;
+    private Integer manualHeightHint;
 
     private static final int MAX_STACK_SIZE = 25;
     private List<UndoRedoStack> undoStack;
@@ -47,9 +50,28 @@ public class TextInputWidget extends Composite {
         layout.marginHeight = 0;
         setLayout(layout);
 
-        styledText = new StyledText(this, SWT.MULTI | SWT.WRAP);
+        styledText = new StyledText(this, SWT.MULTI | SWT.WRAP | SWT.V_SCROLL);
         styledText.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         styledText.addModifyListener(e -> refreshHeight());
+
+        resizeSash = new Sash(this, SWT.HORIZONTAL);
+        GridData sashGd = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        sashGd.exclude = true;
+        sashGd.heightHint = 3;
+        resizeSash.setLayoutData(sashGd);
+        resizeSash.setVisible(false);
+        resizeSash.setCursor(getDisplay().getSystemCursor(SWT.CURSOR_SIZENS));
+        resizeSash.addListener(SWT.Selection, e -> {
+            var sashRect = resizeSash.getBounds();
+            int diff = e.y - sashRect.y;
+            if (diff == 0) return;
+            var textGd = (GridData) styledText.getLayoutData();
+            int minHeight = styledText.getLineHeight() * 2;
+            textGd.heightHint = Math.max(minHeight, textGd.heightHint + diff);
+            manualHeightHint = textGd.heightHint;
+            layout(true, true);
+            onReflow.run();
+        });
 
         popupMenu = new Menu(parent.getShell(), SWT.POP_UP);
         addUndoRedoSupport(popupMenu);
@@ -58,7 +80,7 @@ public class TextInputWidget extends Composite {
     }
 
     private void refreshHeight() {
-        if (styledText.isDisposed()) return;
+        if (manualHeightHint != null || styledText.isDisposed()) return;
         int width = styledText.getSize().x;
         if (width <= 0) return;
         Point size = styledText.computeSize(width, SWT.DEFAULT);
@@ -287,6 +309,18 @@ public class TextInputWidget extends Composite {
         if (styledText.isDisposed()) return;
         int clamped = Math.max(0, Math.min(offset, styledText.getCharCount()));
         styledText.setCaretOffset(clamped);
+    }
+
+    /** Show/hide the resize sash (drag-to-resize). When hidden, reverts to auto-sizing behavior. */
+    public void setResizable(boolean resizable) {
+        ((GridData) resizeSash.getLayoutData()).exclude = !resizable;
+        resizeSash.setVisible(resizable);
+        if (!resizable) {
+            manualHeightHint = null;
+            refreshHeight();
+        }
+        layout(true, true);
+        onReflow.run();
     }
 
     public static record UndoRedoStack (int cursorPosition, String newText, String replacedText, int eventLength, int type) {

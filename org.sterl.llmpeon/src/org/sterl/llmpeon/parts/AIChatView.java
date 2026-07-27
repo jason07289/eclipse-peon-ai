@@ -52,7 +52,6 @@ import org.sterl.llmpeon.parts.config.LlmPreferenceInitializer;
 import org.sterl.llmpeon.parts.config.McpPreferenceInitializer;
 import org.sterl.llmpeon.parts.config.PeonUpdateService;
 import org.sterl.llmpeon.parts.config.QueryToSourcePreferenceInitializer;
-import org.sterl.llmpeon.parts.config.QueryToSourceSettingsDialog;
 import org.sterl.llmpeon.parts.config.VoicePreferenceInitializer;
 import org.sterl.llmpeon.parts.model.UserContext;
 import org.sterl.llmpeon.parts.monitor.EclipseAiMonitor;
@@ -215,8 +214,7 @@ public class AIChatView implements EclipseAiMonitor {
         );
 
         queryBar = new QueryToSourceBarWidget(inputBlock, SWT.NONE,
-            this::onRunStep,
-            this::onOpenQueryToSourceSettings
+            this::onRunStep
         );
         GridData qbgd = new GridData(SWT.FILL, SWT.CENTER, true, false);
         qbgd.exclude = true;
@@ -784,6 +782,7 @@ public class AIChatView implements EclipseAiMonitor {
         boolean qs = aiService.getPeonMode() == PeonMode.QUERY_TO_SOURCE;
         setControlExcluded(queryBar, !qs);
         setControlExcluded(hintComposite, !qs);
+        chatInput.setResizable(qs);
         if (qs) {
             var config = aiService.getQueryToSourceMode().getConfig();
             queryBar.setSteps(config.steps());
@@ -928,18 +927,6 @@ public class AIChatView implements EclipseAiMonitor {
         }).schedule();
     }
 
-    private void onOpenQueryToSourceSettings() {
-        var mode = aiService.getQueryToSourceMode();
-        var dialog = new QueryToSourceSettingsDialog(parent.getShell(), mode.getConfig(), aiService.availablePromptNames());
-        if (dialog.open() == org.eclipse.jface.dialogs.IDialogConstants.OK_ID && dialog.getResult() != null) {
-            var cfg = dialog.getResult();
-            QueryToSourcePreferenceInitializer.save(cfg);
-            mode.setConfig(cfg);
-            queryBar.setSteps(cfg.steps());
-            queryBar.setShowStepNumbers(cfg.showStepNumbers());
-            updateQueryBarState();
-        }
-    }
 
     // TODO 29.03.2026 
     // currentMode should be moved to the aiService

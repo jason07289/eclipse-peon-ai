@@ -296,4 +296,9 @@ public class UserInputWidget extends Composite {
             slashPopup = null;
         }
     }
+
+    /** Show/hide the resize sash (drag-to-resize). */
+    public void setResizable(boolean resizable) {
+        textInput.setResizable(resizable);
+    }
 }
