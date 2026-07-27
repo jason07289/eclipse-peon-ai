@@ -109,7 +109,7 @@ public class ActionsBarWidget extends Composite {
 
     private void buildAgentCombo(Consumer<PeonMode> onModeChange) {
         agentCombo = new Combo(this, SWT.READ_ONLY);
-        agentCombo.setLayoutData(new RowData(100, SWT.DEFAULT));
+        agentCombo.setLayoutData(new RowData(180, SWT.DEFAULT));
         agentCombo.setItems(PeonMode.visibleValues().stream()
                 .map(PeonMode::getLabel)
                 .toArray(String[]::new));

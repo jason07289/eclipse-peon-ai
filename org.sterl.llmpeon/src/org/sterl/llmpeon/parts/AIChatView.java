@@ -123,6 +123,7 @@ public class AIChatView implements EclipseAiMonitor {
     private ChatMarkdownWidget chatHistory;
     private Composite inputBlock;
     private FileChangeReviewWidget fileChangeReview;
+    private Composite hintComposite;
     private org.eclipse.swt.widgets.Label queryHintLabel;
     private UserInputWidget chatInput;
     private UserQuestionWidget questionWidget;
@@ -171,12 +172,24 @@ public class AIChatView implements EclipseAiMonitor {
 
         fileChangeReview = new FileChangeReviewWidget(inputBlock, SWT.NONE, this::undoFileChanges, this::keepFileChanges);
 
-        queryHintLabel = new org.eclipse.swt.widgets.Label(inputBlock, SWT.WRAP);
-        queryHintLabel.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        hintComposite = new Composite(inputBlock, SWT.NONE);
         GridData hintGd = new GridData(SWT.FILL, SWT.TOP, true, false);
         hintGd.exclude = true;
-        queryHintLabel.setLayoutData(hintGd);
-        queryHintLabel.setVisible(false);
+        hintComposite.setLayoutData(hintGd);
+        hintComposite.setVisible(false);
+        var hintLayout = new GridLayout(1, false);
+        hintLayout.marginLeft = 8;
+        hintLayout.marginRight = 8;
+        hintLayout.marginTop = 6;
+        hintLayout.marginBottom = 6;
+        hintLayout.verticalSpacing = 0;
+        hintComposite.setLayout(hintLayout);
+        hintComposite.setBackground(parent.getDisplay().getSystemColor(SWT.COLOR_INFO_BACKGROUND));
+
+        queryHintLabel = new org.eclipse.swt.widgets.Label(hintComposite, SWT.WRAP);
+        queryHintLabel.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        queryHintLabel.setBackground(parent.getDisplay().getSystemColor(SWT.COLOR_INFO_BACKGROUND));
+        queryHintLabel.setForeground(parent.getDisplay().getSystemColor(SWT.COLOR_INFO_FOREGROUND));
 
         chatInput = new UserInputWidget(inputBlock, SWT.NONE,
             this::doSendMessage,
@@ -770,7 +783,7 @@ public class AIChatView implements EclipseAiMonitor {
     private void updateInputForMode() {
         boolean qs = aiService.getPeonMode() == PeonMode.QUERY_TO_SOURCE;
         setControlExcluded(queryBar, !qs);
-        setControlExcluded(queryHintLabel, !qs);
+        setControlExcluded(hintComposite, !qs);
         if (qs) {
             var config = aiService.getQueryToSourceMode().getConfig();
             queryBar.setSteps(config.steps());
@@ -798,7 +811,7 @@ public class AIChatView implements EclipseAiMonitor {
         var mode = aiService.getQueryToSourceMode();
         var next = mode.getNextStep();
         boolean showHint = next.isPresent() && StringUtil.hasValue(next.get().hint());
-        setControlExcluded(queryHintLabel, !showHint);
+        setControlExcluded(hintComposite, !showHint);
         if (showHint) {
             queryHintLabel.setText("💡 " + next.get().label() + ": " + next.get().hint());
         }
@@ -818,11 +831,6 @@ public class AIChatView implements EclipseAiMonitor {
         final var selection = userContext.getUserSelection();
         final var needsSelection = !active.hasUserText(selection);
         var userText = StringUtil.strip(chatInput.getText().trim()) + (needsSelection ? selection : "");
-        if (StringUtil.hasNoValue(userText) && active.getMessages().isEmpty()) {
-            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
-                    "Type a message in the chat input, or continue from an earlier turn."));
-            return;
-        }
         if (QueryToSourceModeService.requiresProject(step)) {
             var project = userContext.getCurrentProject();
             if (project == null || !project.isOpen()) {
