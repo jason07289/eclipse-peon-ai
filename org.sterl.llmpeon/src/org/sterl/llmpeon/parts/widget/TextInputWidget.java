@@ -15,7 +15,6 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.MenuItem;
-import org.eclipse.swt.widgets.Sash;
 
 /**
  * Reusable auto-growing StyledText widget. The text area grows from a minimum of
@@ -27,7 +26,6 @@ public class TextInputWidget extends Composite {
     private final StyledText styledText;
     private final int maxRows;
     private final Runnable onReflow;
-    private Sash resizeSash;
     private Integer manualHeightHint;
 
     private static final int MAX_STACK_SIZE = 25;
@@ -53,25 +51,6 @@ public class TextInputWidget extends Composite {
         styledText = new StyledText(this, SWT.MULTI | SWT.WRAP | SWT.V_SCROLL);
         styledText.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         styledText.addModifyListener(e -> refreshHeight());
-
-        resizeSash = new Sash(this, SWT.HORIZONTAL);
-        GridData sashGd = new GridData(SWT.FILL, SWT.CENTER, true, false);
-        sashGd.exclude = true;
-        sashGd.heightHint = 3;
-        resizeSash.setLayoutData(sashGd);
-        resizeSash.setVisible(false);
-        resizeSash.setCursor(getDisplay().getSystemCursor(SWT.CURSOR_SIZENS));
-        resizeSash.addListener(SWT.Selection, e -> {
-            var sashRect = resizeSash.getBounds();
-            int diff = e.y - sashRect.y;
-            if (diff == 0) return;
-            var textGd = (GridData) styledText.getLayoutData();
-            int minHeight = styledText.getLineHeight() * 2;
-            textGd.heightHint = Math.max(minHeight, textGd.heightHint + diff);
-            manualHeightHint = textGd.heightHint;
-            layout(true, true);
-            onReflow.run();
-        });
 
         popupMenu = new Menu(parent.getShell(), SWT.POP_UP);
         addUndoRedoSupport(popupMenu);
@@ -311,16 +290,28 @@ public class TextInputWidget extends Composite {
         styledText.setCaretOffset(clamped);
     }
 
-    /** Show/hide the resize sash (drag-to-resize). When hidden, reverts to auto-sizing behavior. */
-    public void setResizable(boolean resizable) {
-        ((GridData) resizeSash.getLayoutData()).exclude = !resizable;
-        resizeSash.setVisible(resizable);
-        if (!resizable) {
-            manualHeightHint = null;
-            refreshHeight();
-        }
+    /**
+     * Grows/shrinks the text area by {@code deltaY} pixels, clamped to a minimum of 2 rows.
+     * Switches the widget to manual sizing — {@link #refreshHeight()} stops adjusting the
+     * height until {@link #resetManualHeight()} is called. Driven by the resize sash which
+     * lives in the parent so it can span the whole input area.
+     */
+    public void adjustHeightBy(int deltaY) {
+        if (styledText.isDisposed()) return;
+        GridData gd = (GridData) styledText.getLayoutData();
+        // heightHint is still SWT.DEFAULT when refreshHeight() never ran (width was 0).
+        int current = gd.heightHint > 0 ? gd.heightHint : styledText.getSize().y;
+        int minHeight = styledText.getLineHeight() * 2;
+        gd.heightHint = Math.max(minHeight, current + deltaY);
+        manualHeightHint = gd.heightHint;
         layout(true, true);
         onReflow.run();
+    }
+
+    /** Drops any manually dragged height and reverts to auto-sizing from the content. */
+    public void resetManualHeight() {
+        manualHeightHint = null;
+        refreshHeight();
     }
 
     public static record UndoRedoStack (int cursorPosition, String newText, String replacedText, int eventLength, int type) {

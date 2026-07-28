@@ -15,6 +15,7 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Sash;
 import org.sterl.llmpeon.parts.shared.ImageUtil;
 import org.sterl.llmpeon.parts.shared.SwtUtil;
 import org.sterl.llmpeon.shared.model.SimplePromptFile;
@@ -36,6 +37,7 @@ public class UserInputWidget extends Composite {
     private final TextInputWidget textInput;
     private final Composite rightColumn;
     private final Button sendButton;
+    private final Sash resizeSash;
     private Button micButton;   // null until voice is configured
 
     private final Image micImage;
@@ -156,6 +158,21 @@ public class UserInputWidget extends Composite {
         sendButton.addListener(SWT.Selection, e -> {
             if (working) onStop.run();
             else onSend.run();
+        });
+
+        // Drag handle, hidden by default. It sits BELOW textRow — not inside TextInputWidget —
+        // so it does not add height to the text column alone, which would push the bottom-aligned
+        // send button past the visible edge of the input field.
+        resizeSash = new Sash(this, SWT.HORIZONTAL);
+        GridData sashGd = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        sashGd.exclude = true;
+        sashGd.heightHint = 3;
+        resizeSash.setLayoutData(sashGd);
+        resizeSash.setVisible(false);
+        resizeSash.setCursor(getDisplay().getSystemCursor(SWT.CURSOR_SIZENS));
+        resizeSash.addListener(SWT.Selection, e -> {
+            int diff = e.y - resizeSash.getBounds().y;
+            if (diff != 0) textInput.adjustHeightBy(diff);
         });
     }
 
@@ -297,8 +314,12 @@ public class UserInputWidget extends Composite {
         }
     }
 
-    /** Show/hide the resize sash (drag-to-resize). */
+    /** Show/hide the resize sash (drag-to-resize). When hidden, reverts to auto-sizing behavior. */
     public void setResizable(boolean resizable) {
-        textInput.setResizable(resizable);
+        ((GridData) resizeSash.getLayoutData()).exclude = !resizable;
+        resizeSash.setVisible(resizable);
+        if (!resizable) textInput.resetManualHeight();
+        layout(true, true);
+        requestReflow();
     }
 }
