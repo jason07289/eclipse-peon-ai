@@ -6,6 +6,7 @@ import java.util.List;
 import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.dialogs.TitleAreaDialog;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
@@ -96,6 +97,17 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
         var colFields = new TableColumn(stepTable, SWT.NONE);
         colFields.setText("Fields");
         colFields.setWidth(150);
+
+        // Share the available width instead of overflowing into a horizontal scrollbar.
+        stepTable.addListener(SWT.Resize, e -> {
+            int w = stepTable.getClientArea().width;
+            if (w <= 0) return;
+            colLabel.setWidth((int) (w * 0.22));
+            colKind.setWidth((int) (w * 0.25));
+            colPrompt.setWidth((int) (w * 0.30));
+            colFields.setWidth(Math.max(0,
+                    w - colLabel.getWidth() - colKind.getWidth() - colPrompt.getWidth()));
+        });
 
         stepTable.addListener(SWT.Selection, e -> updateButtonStates());
         stepTable.addListener(SWT.MouseDoubleClick, e -> onEditStep());
@@ -288,6 +300,8 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
     }
 
     private class StepDialog extends TitleAreaDialog {
+        private static final int VISIBLE_FIELD_ROWS = 3;
+
         private final QueryStep initialStep;
         private Text txtLabel;
         private Combo cmbKind;
@@ -311,7 +325,18 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
             super.create();
             setTitle(initialStep == null ? "Add Step" : "Edit Step");
             setMessage("Label, step kind, prompt, required fields, hint, and instruction.");
-            getShell().setSize(500, 450);
+            getShell().setMinimumSize(520, 480);
+        }
+
+        @Override
+        protected boolean isResizable() {
+            return true;
+        }
+
+        @Override
+        protected Point getInitialSize() {
+            var computed = super.getInitialSize();
+            return new Point(Math.max(computed.x, 560), Math.max(computed.y, 540));
         }
 
         @Override
@@ -355,12 +380,17 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
             fieldsTable.setHeaderVisible(true);
             fieldsTable.setLinesVisible(true);
             var fieldTableGd = new GridData(SWT.FILL, SWT.FILL, true, true);
-            fieldTableGd.heightHint = 80;
+            fieldTableGd.heightHint = fieldsTableHeightHint();
             fieldsTable.setLayoutData(fieldTableGd);
 
             var fieldCol = new TableColumn(fieldsTable, SWT.NONE);
-            fieldCol.setText("Field Label");
+            fieldCol.setText("Field Label (checked = required)");
             fieldCol.setWidth(200);
+            // Fill the client width (excludes the vertical scrollbar) so nothing gets clipped.
+            fieldsTable.addListener(SWT.Resize, e -> {
+                int w = fieldsTable.getClientArea().width;
+                if (w > 0) fieldCol.setWidth(w);
+            });
             fieldsTable.addListener(SWT.Selection, e -> updateFieldButtonStates());
 
             var fieldBtnComposite = new Composite(fieldsComposite, SWT.NONE);
@@ -386,13 +416,13 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
 
             if (initialStep != null) {
                 currentFields.addAll(initialStep.fields());
-                refreshFieldsTable();
             }
+            refreshFieldsTable();
 
             addLabel(container, "Hint:");
-            txtHint = new Text(container, SWT.BORDER | SWT.WRAP);
+            txtHint = new Text(container, SWT.BORDER | SWT.MULTI | SWT.WRAP);
             txtHint.setText(initialStep != null ? initialStep.hint() : "");
-            var hintGd = new GridData(SWT.FILL, SWT.CENTER, true, false);
+            var hintGd = new GridData(SWT.FILL, SWT.FILL, true, false);
             hintGd.heightHint = 40;
             txtHint.setLayoutData(hintGd);
 
@@ -430,6 +460,16 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
                 item.setChecked(field.required());
             }
             updateFieldButtonStates();
+        }
+
+        /**
+         * Room for {@value #VISIBLE_FIELD_ROWS} rows; more fields simply scroll. Acts as a minimum,
+         * so the table still takes its share of the extra space when the dialog is enlarged.
+         */
+        private int fieldsTableHeightHint() {
+            int rowHeight = fieldsTable.getItemHeight();
+            if (rowHeight <= 0) rowHeight = 18;
+            return rowHeight * VISIBLE_FIELD_ROWS + fieldsTable.getHeaderHeight() + 4;
         }
 
         private void updateFieldButtonStates() {
