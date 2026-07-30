@@ -271,6 +271,12 @@ public class TextInputWidget extends Composite {
         styledText.addVerifyKeyListener(listener);
     }
 
+    /** Height of the smallest useful text area: the two rows {@link #refreshHeight()} never goes below. */
+    public int getMinimumHeight() {
+        if (styledText.isDisposed()) return 0;
+        return styledText.getLineHeight() * 2;
+    }
+
     /** Sets the background on the underlying StyledText (safe — not a Composite). */
     public void setTextBackground(Color color) {
         styledText.setBackground(color);

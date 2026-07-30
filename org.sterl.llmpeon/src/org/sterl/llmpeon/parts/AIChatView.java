@@ -123,6 +123,10 @@ public class AIChatView implements EclipseAiMonitor {
 
     /** Largest share of the view the input pane may claim while it is auto-sizing. */
     private static final double MAX_AUTO_INPUT_RATIO = 0.6;
+    /** Chat history the divider always leaves visible, however far the input is dragged open. */
+    private static final int MIN_HISTORY_HEIGHT = 60;
+    /** Slack absorbing SashForm's ratio rounding when a corrected height is measured back. */
+    private static final int SNAP_TOLERANCE = 3;
     private static final String SASH_HOOKED = "peon.sashHooked";
 
     private SashForm splitter;
@@ -256,8 +260,11 @@ public class AIChatView implements EclipseAiMonitor {
      */
     private void installSplitterBehavior() {
         splitter.addListener(SWT.Resize, e -> {
-            hookSashes();
             applyAutoInputHeight();
+            // SWT sends Resize before laying the composite out, so on the first pass the sashes
+            // do not exist yet. Hooking after the setWeights above — which forces that layout —
+            // is the earliest they can be found; hookSashes() is idempotent for later resizes.
+            hookSashes();
         });
     }
 
@@ -267,7 +274,19 @@ public class AIChatView implements EclipseAiMonitor {
             sash.setData(SASH_HOOKED, Boolean.TRUE);
             sash.setToolTipText("Drag to resize the input, double-click to auto-size");
             // Selection only fires on an actual drag, so a plain click keeps auto-sizing on.
-            sash.addListener(SWT.Selection, e -> inputManuallySized = true);
+            // SashForm's own listener ran first: for SWT.DRAG it only moves the ghost, and it
+            // commits the weights on the closing event. Correcting the result is therefore only
+            // valid once the gesture is over — touching the weights mid-drag moves the sash out
+            // from under the mouse and kills the rest of the gesture.
+            sash.addListener(SWT.Selection, e -> {
+                inputManuallySized = true;
+                if (e.detail == SWT.DRAG) return;
+                // Re-laying the splitter out from inside this handler moves the sash while it is
+                // still dispatching its own mouse-up, which leaves its drag state unfinished and
+                // the divider dead for every later gesture. Correct the panes once the gesture
+                // has fully unwound instead.
+                sash.getDisplay().asyncExec(this::enforcePaneMinimums);
+            });
             sash.addListener(SWT.MouseDoubleClick, e -> {
                 inputManuallySized = false;
                 applyAutoInputHeight();
@@ -288,9 +307,60 @@ public class AIChatView implements EclipseAiMonitor {
         int width = inputBlock.getSize().x > 0 ? inputBlock.getSize().x : splitter.getClientArea().width;
         if (total <= 0 || width <= 0) return;
 
-        int wanted = inputBlock.computeSize(width, SWT.DEFAULT).y;
-        int inputHeight = Math.max(1, Math.min(wanted, (int) (total * MAX_AUTO_INPUT_RATIO)));
+        int wanted = Math.min(inputBlock.computeSize(width, SWT.DEFAULT).y,
+                              (int) (total * MAX_AUTO_INPUT_RATIO));
+        setInputPaneHeight(clampInputHeight(wanted, total, width), total);
+    }
+
+    /**
+     * Pulls a finished drag back inside the limits when a pane got too small to be usable.
+     * SashForm stores weights as ratios, so the applied height lands a pixel or two off what
+     * was asked for — {@value #SNAP_TOLERANCE}px of slack keeps that residue from looking like
+     * a fresh violation and re-snapping the divider on every later drag.
+     */
+    private void enforcePaneMinimums() {
+        // Runs one event loop turn after the drag, so the view may be gone by now.
+        if (splitter == null || splitter.isDisposed() || inputBlock.isDisposed()) return;
+        int total = splitter.getClientArea().height - splitter.getSashWidth();
+        int width = inputBlock.getSize().x;
+        int current = inputBlock.getSize().y;
+        if (total <= 0 || width <= 0) return;
+
+        int clamped = clampInputHeight(current, total, width);
+        if (Math.abs(clamped - current) > SNAP_TOLERANCE) setInputPaneHeight(clamped, total);
+    }
+
+    private void setInputPaneHeight(int inputHeight, int total) {
         splitter.setWeights(new int[]{ Math.max(1, total - inputHeight), inputHeight });
+    }
+
+    /**
+     * Keeps the input pane between the height its own mandatory rows need — a two-line text
+     * area, the send button, the action and status bars — and whatever leaves
+     * {@value #MIN_HISTORY_HEIGHT}px of chat history. The history's share wins when the view is
+     * too short for both: letting the input claim everything collapses the history to nothing
+     * and parks the sash off the top edge, where it can no longer be grabbed.
+     */
+    private int clampInputHeight(int desired, int total, int width) {
+        int max = Math.max(1, total - MIN_HISTORY_HEIGHT);
+        int min = Math.min(minimumInputHeight(width), max);
+        return Math.max(min, Math.min(desired, max));
+    }
+
+    /**
+     * Height the input block cannot go below: every visible row at its preferred height, except
+     * the text area which only has to show its two-line minimum. inputBlock's GridLayout has no
+     * margins or spacing, so the rows sum exactly.
+     */
+    private int minimumInputHeight(int width) {
+        int min = 0;
+        for (Control child : inputBlock.getChildren()) {
+            if (child.getLayoutData() instanceof GridData gd && gd.exclude) continue;
+            min += child == chatInput
+                    ? chatInput.getMinimumHeight()
+                    : child.computeSize(width, SWT.DEFAULT).y;
+        }
+        return min;
     }
 
     private void registerPreferenceListener() {
@@ -863,6 +933,11 @@ public class AIChatView implements EclipseAiMonitor {
 
     private void updateQueryBarState() {
         if (queryBar == null || queryBar.isDisposed()) return;
+        // Wizard-only state. Project selection, sending a prompt and call completion all funnel
+        // through here, and in DEV/PLAN the step bar and hint are excluded by
+        // updateInputForMode() — without this guard those events resurrect the hint.
+        if (aiService.getPeonMode() != PeonMode.QUERY_TO_SOURCE) return;
+
         var project = userContext.getCurrentProject();
         boolean projectAvailable = project != null && project.isOpen();
         int completedStepIndex = aiService.getQueryToSourceMode().getCompletedStepIndex();
@@ -872,9 +947,15 @@ public class AIChatView implements EclipseAiMonitor {
         var mode = aiService.getQueryToSourceMode();
         var next = mode.getNextStep();
         boolean showHint = next.isPresent() && StringUtil.hasValue(next.get().hint());
+        boolean hintChanged = ((GridData) hintComposite.getLayoutData()).exclude == showHint;
         setControlExcluded(hintComposite, !showHint);
         if (showHint) {
             queryHintLabel.setText("💡 " + next.get().label() + ": " + next.get().hint());
+        }
+        // The hint is a row of the input block, so showing or hiding it resizes the pane.
+        if (hintChanged) {
+            inputBlock.layout(true, true);
+            applyAutoInputHeight();
         }
     }
 

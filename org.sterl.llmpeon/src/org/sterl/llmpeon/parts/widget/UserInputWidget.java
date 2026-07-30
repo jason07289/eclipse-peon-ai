@@ -23,15 +23,17 @@ import org.sterl.llmpeon.shared.model.SimplePromptFile;
  * User input area: file chips bar (hidden until files attached), auto-resizing
  * StyledText (min 2 / max 7 rows), mic button, and Send/Stop button.
  *
- * <p>No backgrounds are set anywhere inside this widget — the StyledText keeps
- * its native OS white, and the paint-based Buttons from {@link SwtUtil#createIconButton}
- * inherit the same background so the whole area reads as one flat field.
+ * <p>Only the StyledText is white — it is the field. The icon column beside it keeps the
+ * default widget background, so the paint-based Buttons from {@link SwtUtil#createIconButton}
+ * blend into the surrounding chrome instead of extending the white field past its scrollbar.
  */
 public class UserInputWidget extends Composite {
 
     public static void setDropActiveProjectSupplier(Supplier<IProject> supplier) {
         FileDropSupport.setActiveProjectSupplier(supplier);
     }
+
+    private static final int TEXT_ROW_MARGIN = 2;
 
     private final TextInputWidget textInput;
     private final Composite rightColumn;
@@ -64,10 +66,9 @@ public class UserInputWidget extends Composite {
         sendImage = DebugUITools.getImage(IDebugUIConstants.IMG_ACT_RUN);
         stopImage = ImageUtil.loadImage(this, ImageUtil.STOP);
 
-        // Single white reference shared by TextInputWidget and rightColumn so the
-        // entire input area renders as one uniform color. macOS quirk: explicitly
-        // setting StyledText's background is what wakes up the paint chain so the
-        // surrounding composite PaintListeners actually fire on resize.
+        // White stops at the text field. Painting the button column white too made the
+        // StyledText's own scrollbar look like a seam splitting one big white area, so the
+        // column keeps the default widget background and reads as its own strip instead.
         final Color bgWhite = getDisplay().getSystemColor(SWT.COLOR_WHITE);
 
         GridLayout outerLayout = new GridLayout(1, false);
@@ -79,8 +80,8 @@ public class UserInputWidget extends Composite {
         // --- Text row: TextInputWidget | right icon column ---
         Composite textRow = new Composite(this, SWT.NONE);
         GridLayout textRowLayout = new GridLayout(2, false);
-        textRowLayout.marginWidth = 2;
-        textRowLayout.marginHeight = 2;
+        textRowLayout.marginWidth = TEXT_ROW_MARGIN;
+        textRowLayout.marginHeight = TEXT_ROW_MARGIN;
         textRowLayout.horizontalSpacing = 0;
         textRow.setLayout(textRowLayout);
         textRow.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
@@ -147,12 +148,6 @@ public class UserInputWidget extends Composite {
         rcLayout.verticalSpacing = 0;
         rightColumn.setLayout(rcLayout);
         rightColumn.setLayoutData(new GridData(SWT.CENTER, SWT.FILL, false, true));
-        rightColumn.setBackground(bgWhite);
-        rightColumn.setBackgroundMode(SWT.INHERIT_DEFAULT);
-        rightColumn.addPaintListener(e -> {
-            e.gc.setBackground(bgWhite);
-            e.gc.fillRectangle(rightColumn.getClientArea());
-        });
 
         sendButton = SwtUtil.createIconButton(rightColumn, sendImage, "Send (Enter)");
         sendButton.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, false, true));
@@ -169,6 +164,16 @@ public class UserInputWidget extends Composite {
         p.layout(new Control[]{ this });
         // The owner decides how much height the input actually gets — see AIChatView's SashForm.
         onHeightChange.run();
+    }
+
+    /**
+     * Smallest height that still shows a usable widget: two rows of text next to the icon
+     * column, plus the text row's margins. Used by the owner to limit its splitter.
+     */
+    public int getMinimumHeight() {
+        int rows = textInput.getMinimumHeight();
+        int icons = rightColumn.computeSize(SWT.DEFAULT, SWT.DEFAULT).y;
+        return Math.max(rows, icons) + 2 * TEXT_ROW_MARGIN;
     }
 
     /** Callback for the owner to re-run its own sizing when the input's preferred height moves. */
