@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.PaintListener;
+import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.FillLayout;
@@ -29,8 +30,13 @@ import org.sterl.llmpeon.skill.SkillPromptFile;
  */
 public class SlashMenuPopup {
 
-    private static final int NAME_COL_WIDTH = 200;
-    
+    /** Base width of the command-name column. */
+    private static final int NAME_COL_MIN_WIDTH = 200;
+    /** Extra room, in (wide/CJK) characters, the name column may grow beyond the base width. */
+    private static final int NAME_COL_EXTRA_CHARS = 6;
+    /** The description column never shrinks below this. */
+    private static final int DESC_COL_MIN_WIDTH = 160;
+
     /** Maximum rows shown without scrolling. */
     private static final int MAX_VISIBLE_ROWS = 8;
     /** Minimum popup width in pixels. */
@@ -49,6 +55,7 @@ public class SlashMenuPopup {
     private List<SimplePromptFile> filtered = List.of();
     private List<SimplePromptFile> source = List.of();
     private String currentPrefix = "";
+    private int nameColumnWidth = NAME_COL_MIN_WIDTH;
     private Listener popupCloseMouseListener;
     private boolean popupCloseFilterRegistered = false;
 
@@ -198,10 +205,10 @@ public class SlashMenuPopup {
         table.setLinesVisible(false);
 
         var colName = new TableColumn(table, SWT.LEFT);
-        colName.setWidth(NAME_COL_WIDTH);
+        colName.setWidth(NAME_COL_MIN_WIDTH);
 
         var colDesc = new TableColumn(table, SWT.LEFT);
-        colDesc.setWidth(MAX_WIDTH - 164);
+        colDesc.setWidth(DESC_COL_MIN_WIDTH);
 
         // Single click to select, click again on selected item to confirm
         table.addListener(SWT.MouseDown, e -> {
@@ -244,6 +251,36 @@ public class SlashMenuPopup {
             item.setForeground(1, table.getDisplay().getSystemColor(SWT.COLOR_DARK_GRAY));
         }
         if (!filtered.isEmpty()) table.setSelection(0);
+        nameColumnWidth = measureNameColumnWidth();
+        // The popup keeps its width while the prefix is edited, so re-split the columns here too.
+        if (popup.getSize().x > 0) applyColumnWidths(popup.getSize().x);
+    }
+
+    /** Splits {@code width} between the name and description columns. */
+    private void applyColumnWidths(int width) {
+        int nameWidth = Math.min(nameColumnWidth, Math.max(NAME_COL_MIN_WIDTH, width - DESC_COL_MIN_WIDTH - 4));
+        table.getColumn(0).setWidth(nameWidth);
+        table.getColumn(1).setWidth(Math.max(DESC_COL_MIN_WIDTH, width - nameWidth - 4));
+    }
+
+    /**
+     * Width needed by the longest visible command name, capped at
+     * {@link #NAME_COL_MIN_WIDTH} plus {@link #NAME_COL_EXTRA_CHARS} wide characters so a single
+     * very long name cannot squeeze the description away.
+     */
+    private int measureNameColumnWidth() {
+        var gc = new GC(table);
+        try {
+            gc.setFont(table.getFont());
+            int longest = 0;
+            for (var cmd : filtered) {
+                longest = Math.max(longest, gc.textExtent("/" + cmd.name()).x);
+            }
+            int max = NAME_COL_MIN_WIDTH + NAME_COL_EXTRA_CHARS * gc.textExtent("가").x;
+            return Math.max(NAME_COL_MIN_WIDTH, Math.min(max, longest + 12));
+        } finally {
+            gc.dispose();
+        }
     }
 
     private void layoutAt(Point anchorScreen) {
@@ -253,8 +290,7 @@ public class SlashMenuPopup {
         int height = rowHeight * rows + 6;
 
         int width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, anchor.getSize().x));
-        table.getColumn(0).setWidth(NAME_COL_WIDTH);
-        table.getColumn(1).setWidth(width - NAME_COL_WIDTH - 4);
+        applyColumnWidths(width);
 
         var bounds = new Rectangle(0, 0, width, height);
         if (anchorScreen != null) {
