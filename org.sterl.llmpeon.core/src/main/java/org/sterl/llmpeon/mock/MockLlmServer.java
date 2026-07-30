@@ -3,7 +3,6 @@ package org.sterl.llmpeon.mock;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -11,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -35,7 +35,11 @@ public class MockLlmServer {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private HttpServer server;
+    /** Port requested by the caller, {@code 0} means "let the OS pick a free one". */
+    private int requestedPort = 0;
+    /** Port the server is actually bound to, only valid while started. */
     private int port = 0;
+    private ExecutorService executor;
     private final ConcurrentLinkedQueue<Object> responseQueue = new ConcurrentLinkedQueue<>();
     private final List<ChatMessage> capturedMessages = new ArrayList<>();
     private final AtomicReference<String> lastRequestBody = new AtomicReference<>();
@@ -44,7 +48,7 @@ public class MockLlmServer {
     private boolean forceNonStreaming = false;
 
     public MockLlmServer(int port) {
-        this.port = port;
+        this.requestedPort = port;
     }
 
     // -------------------------------------------------------------------------
@@ -52,30 +56,35 @@ public class MockLlmServer {
     // -------------------------------------------------------------------------
 
     public void start() {
-        if (port == 0) {
-            try (var s = new ServerSocket(0)) {
-                port = s.getLocalPort();
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
         try {
-            server = HttpServer.create(new InetSocketAddress(port), 0);
-            server.createContext("/v1/chat/completions", this::handleChatCompletions);
-            server.createContext("/v1/models", this::handleModels);
-            server.setExecutor(Executors.newCachedThreadPool());
-            server.start();
+            // Bind straight to the requested port - passing 0 lets the OS hand out a free one
+            // atomically. Probing for a free port first and re-binding it afterwards races with
+            // sockets still lingering in TIME_WAIT and fails with "Address already in use".
+            server = HttpServer.create(new InetSocketAddress(requestedPort), 0);
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw new UncheckedIOException("Failed to start mock LLM server on port " + requestedPort, e);
         }
+        port = server.getAddress().getPort();
+        server.createContext("/v1/chat/completions", this::handleChatCompletions);
+        server.createContext("/v1/models", this::handleModels);
+        executor = Executors.newCachedThreadPool();
+        server.setExecutor(executor);
+        server.start();
     }
 
     public void stop() {
-        if (server != null) server.stop(0);
+        if (server != null) {
+            server.stop(0);
+            server = null;
+        }
+        if (executor != null) {
+            executor.shutdownNow();
+            executor = null;
+        }
     }
 
     public int getPort() {
-        return server.getAddress().getPort();
+        return port;
     }
 
     public String getUrl() {
