@@ -3,7 +3,8 @@ package org.sterl.llmpeon.parts.config;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.TreeSet;
+import java.util.Map;
+import java.util.TreeMap;
 
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.jface.dialogs.IDialogConstants;
@@ -28,6 +29,7 @@ import org.sterl.llmpeon.ai.AiProvider;
 import org.sterl.llmpeon.ai.LlmConfig;
 import org.sterl.llmpeon.command.CommandService;
 import org.sterl.llmpeon.parts.PeonConstants;
+import org.sterl.llmpeon.parts.config.QueryToSourceSettingsDialog.PromptOption;
 import org.sterl.llmpeon.skill.SkillService;
 
 public class AiConfigPreferenceView extends FieldEditorPreferencePage implements IWorkbenchPreferencePage {
@@ -171,26 +173,32 @@ public class AiConfigPreferenceView extends FieldEditorPreferencePage implements
         btnQts.setLayoutData(gd);
         btnQts.addListener(SWT.Selection, e -> {
             var config = QueryToSourcePreferenceInitializer.load();
-            var dialog = new QueryToSourceSettingsDialog(getShell(), config, availablePromptNames());
+            var dialog = new QueryToSourceSettingsDialog(getShell(), config, availablePromptOptions());
             if (dialog.open() == IDialogConstants.OK_ID && dialog.getResult() != null) {
                 QueryToSourcePreferenceInitializer.save(dialog.getResult());
             }
         });
     }
 
-    private List<String> availablePromptNames() {
-        var set = new TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+    /** Prompt names offered in the Query-to-Source settings, each tagged as skill and/or command. */
+    private List<PromptOption> availablePromptOptions() {
+        var byName = new TreeMap<String, PromptOption>(String.CASE_INSENSITIVE_ORDER);
         try {
             var skillDir = getPreferenceStore().getString(PeonConstants.PREF_SKILL_DIRECTORY);
             new SkillService(skillDir.isBlank() ? null : Path.of(skillDir))
-                    .getAllLoadedSkills().forEach(s -> set.add(s.name()));
+                    .getAllLoadedSkills().forEach(s -> merge(byName, s.name(), true, false));
         } catch (Exception ignored) {}
         try {
             var cmdDir = getPreferenceStore().getString(PeonConstants.PREF_COMMAND_DIRECTORY);
             new CommandService(cmdDir.isBlank() ? null : Path.of(cmdDir))
-                    .getAllLoadedCommands().forEach(c -> set.add(c.name()));
+                    .getAllLoadedCommands().forEach(c -> merge(byName, c.name(), false, true));
         } catch (Exception ignored) {}
-        return new ArrayList<>(set);
+        return new ArrayList<>(byName.values());
+    }
+
+    private static void merge(Map<String, PromptOption> byName, String name, boolean skill, boolean command) {
+        byName.merge(name, new PromptOption(name, skill, command),
+                (a, b) -> new PromptOption(a.name(), a.skill() || b.skill(), a.command() || b.command()));
     }
 
     @Override

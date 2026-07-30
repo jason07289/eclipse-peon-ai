@@ -29,6 +29,8 @@ import org.sterl.llmpeon.querytosource.StepKind;
 public class QueryToSourceSettingsDialog extends TitleAreaDialog {
 
     private static final String NONE = "(none)";
+    /** Shown for a configured prompt whose skill/command is no longer loaded. */
+    private static final String UNKNOWN_TAG = "[?]";
 
     private static final String[] KIND_LABELS = {
             "질의 변환 (Transform)",
@@ -37,7 +39,24 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
     };
 
     private final QueryToSourceConfig initial;
-    private final List<String> availablePrompts;
+    private final List<PromptOption> availablePrompts;
+
+    /**
+     * A selectable prompt plus where it comes from, so the UI can show whether a name is a skill,
+     * a command, or both. Only {@link #name()} is stored in the config.
+     */
+    public record PromptOption(String name, boolean skill, boolean command) {
+        String displayLabel() {
+            return sourceTag() + " " + name;
+        }
+
+        private String sourceTag() {
+            if (skill && command) return "[Skill+Command]";
+            if (command) return "[Command]";
+            if (skill) return "[Skill]";
+            return UNKNOWN_TAG;
+        }
+    }
 
     private Table stepTable;
     private Button btnEdit;
@@ -50,7 +69,7 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
     private boolean showStepNumbers;
     private QueryToSourceConfig result;
 
-    public QueryToSourceSettingsDialog(Shell parent, QueryToSourceConfig initial, List<String> availablePrompts) {
+    public QueryToSourceSettingsDialog(Shell parent, QueryToSourceConfig initial, List<PromptOption> availablePrompts) {
         super(parent);
         this.initial = initial == null ? QueryToSourceConfig.defaults() : initial;
         this.availablePrompts = availablePrompts == null ? List.of() : availablePrompts;
@@ -171,7 +190,7 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
             var item = new TableItem(stepTable, SWT.NONE);
             item.setText(0, step.label());
             item.setText(1, kindLabel(step.kind()));
-            item.setText(2, step.prompt().isBlank() ? NONE : step.prompt());
+            item.setText(2, promptDisplay(step.prompt()));
             var fieldsText = step.fields().isEmpty() ? "-" : step.fields().stream()
                     .map(f -> f.required() ? f.label() + "*" : f.label())
                     .collect(java.util.stream.Collectors.joining(", "));
@@ -258,16 +277,27 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
         return true;
     }
 
+    /**
+     * Items are tagged ({@code [Skill] foo}) while the plain prompt names are kept as widget data,
+     * because only the name is stored in the config.
+     */
     private Combo buildPromptCombo(Composite parent, String selected) {
         var cmb = new Combo(parent, SWT.READ_ONLY | SWT.DROP_DOWN);
         cmb.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         var items = new ArrayList<String>();
+        var values = new ArrayList<String>();
         items.add(NONE);
-        items.addAll(availablePrompts);
-        if (selected != null && !selected.isBlank() && !items.contains(selected)) {
-            items.add(selected);
+        values.add("");
+        for (var option : availablePrompts) {
+            items.add(option.displayLabel());
+            values.add(option.name());
+        }
+        if (selected != null && !selected.isBlank() && !values.contains(selected)) {
+            items.add(UNKNOWN_TAG + " " + selected);
+            values.add(selected);
         }
         cmb.setItems(items.toArray(String[]::new));
+        cmb.setData(values.toArray(String[]::new));
         selectPrompt(cmb, selected);
         return cmb;
     }
@@ -277,9 +307,9 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
             cmb.select(0);
             return;
         }
-        var items = cmb.getItems();
-        for (int i = 0; i < items.length; i++) {
-            if (items[i].equals(value)) {
+        var values = (String[]) cmb.getData();
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(value)) {
                 cmb.select(i);
                 return;
             }
@@ -290,7 +320,16 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
     private String promptValue(Combo cmb) {
         int idx = cmb.getSelectionIndex();
         if (idx <= 0) return "";
-        return cmb.getItem(idx);
+        return ((String[]) cmb.getData())[idx];
+    }
+
+    /** Tagged label for the steps table, e.g. {@code [Command] commit}. */
+    private String promptDisplay(String name) {
+        if (name == null || name.isBlank()) return NONE;
+        for (var option : availablePrompts) {
+            if (option.name().equals(name)) return option.displayLabel();
+        }
+        return UNKNOWN_TAG + " " + name;
     }
 
     private void addLabel(Composite parent, String text) {
@@ -324,7 +363,7 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
         public void create() {
             super.create();
             setTitle(initialStep == null ? "Add Step" : "Edit Step");
-            setMessage("Label, step kind, prompt, required fields, hint, and instruction.");
+            setMessage("Label, step kind, prompt ([Skill] / [Command] tagged), required fields, hint, and instruction.");
             getShell().setMinimumSize(520, 480);
         }
 

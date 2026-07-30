@@ -123,6 +123,9 @@ Press **⚙** in the wizard bar to open **Query-to-Source Settings**:
 - Use **Up / Down** to change execution order (button order left-to-right matches table order).
 - Pick a **Prompt** from all loaded **commands and skills** (see
   [Commands](/setup/commands) and [Agents & Skills](/setup/agents-and-skills)).
+  Each entry is tagged with its source: `[Skill] name`, `[Command] name`, `[Skill+Command] name`
+  when both exist under that name, or `[?] name` for a configured prompt that is no longer loaded.
+  Only the plain name is stored — the tag is display only.
 
 Settings are stored in Eclipse preferences and reused across sessions.
 
