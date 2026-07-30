@@ -23,9 +23,11 @@ import org.sterl.llmpeon.shared.model.SimplePromptFile;
  * User input area: file chips bar (hidden until files attached), auto-resizing
  * StyledText (min 2 / max 7 rows), mic button, and Send/Stop button.
  *
- * <p>Only the StyledText is white — it is the field. The icon column beside it keeps the
- * default widget background, so the paint-based Buttons from {@link SwtUtil#createIconButton}
- * blend into the surrounding chrome instead of extending the white field past its scrollbar.
+ * <p>The icons float inside the white field's bottom-right corner rather than sitting in a column
+ * beside it. Anything placed to the right of the StyledText leaves its scrollbar as a seam
+ * splitting two white areas; inside the client area the scrollbar stays at the outer edge. The
+ * paint-based Buttons from {@link SwtUtil#createIconButton} are given the field's white so they
+ * disappear into it — see {@link TextInputWidget#addOverlay(org.eclipse.swt.widgets.Control)}.
  */
 public class UserInputWidget extends Composite {
 
@@ -36,7 +38,7 @@ public class UserInputWidget extends Composite {
     private static final int TEXT_ROW_MARGIN = 2;
 
     private final TextInputWidget textInput;
-    private final Composite rightColumn;
+    private final Color bgWhite;
     private final Button sendButton;
     private Button micButton;   // null until voice is configured
 
@@ -66,10 +68,7 @@ public class UserInputWidget extends Composite {
         sendImage = DebugUITools.getImage(IDebugUIConstants.IMG_ACT_RUN);
         stopImage = ImageUtil.loadImage(this, ImageUtil.STOP);
 
-        // White stops at the text field. Painting the button column white too made the
-        // StyledText's own scrollbar look like a seam splitting one big white area, so the
-        // column keeps the default widget background and reads as its own strip instead.
-        final Color bgWhite = getDisplay().getSystemColor(SWT.COLOR_WHITE);
+        bgWhite = getDisplay().getSystemColor(SWT.COLOR_WHITE);
 
         GridLayout outerLayout = new GridLayout(1, false);
         outerLayout.marginWidth = 0;
@@ -77,9 +76,9 @@ public class UserInputWidget extends Composite {
         outerLayout.verticalSpacing = 2;
         setLayout(outerLayout);
 
-        // --- Text row: TextInputWidget | right icon column ---
+        // --- Text row: the field, with the icons floating inside it ---
         Composite textRow = new Composite(this, SWT.NONE);
-        GridLayout textRowLayout = new GridLayout(2, false);
+        GridLayout textRowLayout = new GridLayout(1, false);
         textRowLayout.marginWidth = TEXT_ROW_MARGIN;
         textRowLayout.marginHeight = TEXT_ROW_MARGIN;
         textRowLayout.horizontalSpacing = 0;
@@ -140,17 +139,11 @@ public class UserInputWidget extends Composite {
             }
         });
 
-        // Right icon column — mic on top (optional), send/stop at bottom
-        rightColumn = new Composite(textRow, SWT.NONE);
-        GridLayout rcLayout = new GridLayout(1, false);
-        rcLayout.marginWidth = 0;
-        rcLayout.marginHeight = 0;
-        rcLayout.verticalSpacing = 0;
-        rightColumn.setLayout(rcLayout);
-        rightColumn.setLayoutData(new GridData(SWT.CENTER, SWT.FILL, false, true));
-
-        sendButton = SwtUtil.createIconButton(rightColumn, sendImage, "Send (Enter)");
-        sendButton.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, false, true));
+        // Send/stop floats inside the field's bottom-right corner; the mic joins to its left
+        // once voice input is configured.
+        sendButton = SwtUtil.createIconButton(textInput, sendImage, "Send (Enter)");
+        sendButton.setBackground(bgWhite);
+        textInput.addOverlay(sendButton);
         sendButton.addListener(SWT.Selection, e -> {
             if (working) onStop.run();
             else onSend.run();
@@ -167,13 +160,11 @@ public class UserInputWidget extends Composite {
     }
 
     /**
-     * Smallest height that still shows a usable widget: two rows of text next to the icon
-     * column, plus the text row's margins. Used by the owner to limit its splitter.
+     * Smallest height that still shows a usable widget: two rows of text (or the floating icons,
+     * whichever needs more) plus the text row's margins. Used by the owner to limit its splitter.
      */
     public int getMinimumHeight() {
-        int rows = textInput.getMinimumHeight();
-        int icons = rightColumn.computeSize(SWT.DEFAULT, SWT.DEFAULT).y;
-        return Math.max(rows, icons) + 2 * TEXT_ROW_MARGIN;
+        return textInput.getMinimumHeight() + 2 * TEXT_ROW_MARGIN;
     }
 
     /** Callback for the owner to re-run its own sizing when the input's preferred height moves. */
@@ -201,26 +192,25 @@ public class UserInputWidget extends Composite {
     /** Show or hide the mic button. Created on first show, disposed on hide so the slot is truly empty. */
     public void setVoiceInputVisible(boolean visible) {
         if (visible && (micButton == null || micButton.isDisposed())) {
-            micButton = SwtUtil.createIconButton(rightColumn,
+            micButton = SwtUtil.createIconButton(textInput,
                     micImage,
                     "Click to start recording — click again to stop and transcribe");
-            // Place mic before sendButton and sit at the top
-            micButton.moveAbove(sendButton);
-            micButton.setLayoutData(new GridData(SWT.CENTER, SWT.TOP, false, false));
+            micButton.setBackground(bgWhite);
             micButton.addListener(SWT.Selection, e -> onMicClick.run());
-            rightColumn.layout(true, true);
+            textInput.addOverlay(micButton, 0);  // left of send
             requestReflow();
         } else if (!visible && micButton != null && !micButton.isDisposed()) {
-            micButton.dispose();
+            micButton.dispose();  // the overlay registration drops itself on dispose
             micButton = null;
-            rightColumn.layout(true, true);
+            textInput.layout(true, true);
             requestReflow();
         }
     }
 
     public void setRecording(boolean recording) {
         if (micButton != null && !micButton.isDisposed()) {
-            micButton.setBackground(recording ? colorRecording : null);
+            // Back to the field's white, not null — the parent is the text widget now.
+            micButton.setBackground(recording ? colorRecording : bgWhite);
             micButton.setToolTipText(recording
                 ? "Recording... click to stop and transcribe"
                 : "Click to start recording — click again to stop and transcribe");

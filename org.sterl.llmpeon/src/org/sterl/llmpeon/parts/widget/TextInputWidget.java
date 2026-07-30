@@ -1,5 +1,6 @@
 package org.sterl.llmpeon.parts.widget;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -10,9 +11,9 @@ import org.eclipse.swt.events.KeyListener;
 import org.eclipse.swt.events.ModifyListener;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Point;
-import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Layout;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.MenuItem;
 
@@ -23,9 +24,16 @@ import org.eclipse.swt.widgets.MenuItem;
  */
 public class TextInputWidget extends Composite {
 
+    /** Gap between the overlay row and the field edges / between two overlays. */
+    private static final int OVERLAY_MARGIN = 3;
+    private static final int OVERLAY_SPACING = 2;
+
     private final StyledText styledText;
     private final int maxRows;
     private final Runnable onReflow;
+    private final List<Control> overlays = new ArrayList<>();
+    /** Height {@link #refreshHeight()} settled on; 0 until the first measurement. */
+    private int heightHint;
 
     private static final int MAX_STACK_SIZE = 25;
     private List<UndoRedoStack> undoStack;
@@ -42,13 +50,9 @@ public class TextInputWidget extends Composite {
         undoStack = new LinkedList<>();
         redoStack = new LinkedList<>();
 
-        GridLayout layout = new GridLayout(1, false);
-        layout.marginWidth = 0;
-        layout.marginHeight = 0;
-        setLayout(layout);
+        setLayout(new OverlayLayout());
 
         styledText = new StyledText(this, SWT.MULTI | SWT.WRAP | SWT.V_SCROLL);
-        styledText.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         styledText.addModifyListener(e -> refreshHeight());
 
         popupMenu = new Menu(parent.getShell(), SWT.POP_UP);
@@ -62,15 +66,108 @@ public class TextInputWidget extends Composite {
         int width = styledText.getSize().x;
         if (width <= 0) return;
         Point size = styledText.computeSize(width, SWT.DEFAULT);
-        GridData gd = (GridData) styledText.getLayoutData();
         int lineH = styledText.getLineHeight();
         int minHeight = lineH * 2;
         int maxHeight = lineH * maxRows;
         int newHint = Math.max(minHeight, Math.min(maxHeight, size.y));
-        if (gd.heightHint != newHint) {
-            gd.heightHint = newHint;
+        if (heightHint != newHint) {
+            heightHint = newHint;
             onReflow.run();
         }
+    }
+
+    /**
+     * Registers a control that floats on top of the text area, anchored bottom-right and laid out
+     * left to right in registration order. Overlays live inside the StyledText's client area — to
+     * the left of its scrollbar — so the field stays one uninterrupted surface; a sibling column
+     * beside the StyledText would leave the scrollbar as a seam splitting it.
+     *
+     * <p>Text never flows under an overlay: {@link #applyOverlayMargin()} reserves the strip as a
+     * right margin on the StyledText.
+     */
+    public void addOverlay(Control control) {
+        addOverlay(control, overlays.size());
+    }
+
+    /** As {@link #addOverlay(Control)}, but places the control at {@code index} in the row. */
+    public void addOverlay(Control control, int index) {
+        if (control == null || control.isDisposed()) return;
+        overlays.add(Math.max(0, Math.min(index, overlays.size())), control);
+        control.moveAbove(styledText);
+        control.addDisposeListener(e -> {
+            overlays.remove(control);
+            if (!isDisposed()) applyOverlayMargin();
+        });
+        applyOverlayMargin();
+    }
+
+    /** Width the overlay row needs, including the gaps around it; 0 when there are no overlays. */
+    private int overlayStripWidth() {
+        int width = 0;
+        for (var overlay : overlays) {
+            if (overlay.isDisposed()) continue;
+            if (width > 0) width += OVERLAY_SPACING;
+            width += overlay.computeSize(SWT.DEFAULT, SWT.DEFAULT).x;
+        }
+        return width == 0 ? 0 : width + 2 * OVERLAY_MARGIN;
+    }
+
+    /** Keeps wrapped text clear of the overlay strip. */
+    private void applyOverlayMargin() {
+        if (styledText.isDisposed()) return;
+        int right = overlayStripWidth();
+        if (styledText.getRightMargin() == right) return;
+        styledText.setMargins(styledText.getLeftMargin(), styledText.getTopMargin(),
+                right, styledText.getBottomMargin());
+        layout(true, true);
+        refreshHeight();
+    }
+
+    /**
+     * Stacks the overlays on top of the StyledText instead of beside it. Sizing follows the
+     * {@link #refreshHeight()} hint so the field still grows from 2 rows to {@code maxRows}.
+     */
+    private class OverlayLayout extends Layout {
+        @Override
+        protected Point computeSize(Composite composite, int wHint, int hHint, boolean flushCache) {
+            int width = wHint == SWT.DEFAULT ? styledText.computeSize(wHint, SWT.DEFAULT).x : wHint;
+            int height = hHint != SWT.DEFAULT ? hHint
+                    : heightHint > 0 ? heightHint
+                    : styledText.computeSize(width, SWT.DEFAULT).y;
+            return new Point(Math.max(width, 0), Math.max(height, minimumOverlayHeight()));
+        }
+
+        @Override
+        protected void layout(Composite composite, boolean flushCache) {
+            var area = composite.getClientArea();
+            styledText.setBounds(area);
+            if (overlays.isEmpty()) return;
+            // Client area excludes the scrollbar where it takes space, so the row cannot cover it.
+            var inner = styledText.getClientArea();
+            // Overlays are siblings of the StyledText, so translate its client area to our own.
+            int right = area.x + inner.x + inner.width;
+            int bottom = area.y + inner.y + inner.height;
+            int x = right - OVERLAY_MARGIN;
+            for (int i = overlays.size() - 1; i >= 0; i--) {
+                var overlay = overlays.get(i);
+                if (overlay.isDisposed()) continue;
+                var size = overlay.computeSize(SWT.DEFAULT, SWT.DEFAULT);
+                x -= size.x;
+                overlay.setBounds(x, Math.max(area.y, bottom - size.y - OVERLAY_MARGIN),
+                        size.x, size.y);
+                x -= OVERLAY_SPACING;
+            }
+        }
+    }
+
+    /** Enough room for the overlay row to sit fully inside the field. */
+    private int minimumOverlayHeight() {
+        int tallest = 0;
+        for (var overlay : overlays) {
+            if (overlay.isDisposed()) continue;
+            tallest = Math.max(tallest, overlay.computeSize(SWT.DEFAULT, SWT.DEFAULT).y);
+        }
+        return tallest == 0 ? 0 : tallest + 2 * OVERLAY_MARGIN;
     }
 
     // Add support functions for Undo/Redo with Popup Menu on text widget
@@ -271,10 +368,13 @@ public class TextInputWidget extends Composite {
         styledText.addVerifyKeyListener(listener);
     }
 
-    /** Height of the smallest useful text area: the two rows {@link #refreshHeight()} never goes below. */
+    /**
+     * Height of the smallest useful text area: the two rows {@link #refreshHeight()} never goes
+     * below, or the overlay row if that needs more.
+     */
     public int getMinimumHeight() {
         if (styledText.isDisposed()) return 0;
-        return styledText.getLineHeight() * 2;
+        return Math.max(styledText.getLineHeight() * 2, minimumOverlayHeight());
     }
 
     /** Sets the background on the underlying StyledText (safe — not a Composite). */
