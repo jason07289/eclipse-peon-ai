@@ -26,7 +26,6 @@ public class TextInputWidget extends Composite {
     private final StyledText styledText;
     private final int maxRows;
     private final Runnable onReflow;
-    private Integer manualHeightHint;
 
     private static final int MAX_STACK_SIZE = 25;
     private List<UndoRedoStack> undoStack;
@@ -59,7 +58,7 @@ public class TextInputWidget extends Composite {
     }
 
     private void refreshHeight() {
-        if (manualHeightHint != null || styledText.isDisposed()) return;
+        if (styledText.isDisposed()) return;
         int width = styledText.getSize().x;
         if (width <= 0) return;
         Point size = styledText.computeSize(width, SWT.DEFAULT);
@@ -288,30 +287,6 @@ public class TextInputWidget extends Composite {
         if (styledText.isDisposed()) return;
         int clamped = Math.max(0, Math.min(offset, styledText.getCharCount()));
         styledText.setCaretOffset(clamped);
-    }
-
-    /**
-     * Grows/shrinks the text area by {@code deltaY} pixels, clamped to a minimum of 2 rows.
-     * Switches the widget to manual sizing — {@link #refreshHeight()} stops adjusting the
-     * height until {@link #resetManualHeight()} is called. Driven by the resize sash which
-     * lives in the parent so it can span the whole input area.
-     */
-    public void adjustHeightBy(int deltaY) {
-        if (styledText.isDisposed()) return;
-        GridData gd = (GridData) styledText.getLayoutData();
-        // heightHint is still SWT.DEFAULT when refreshHeight() never ran (width was 0).
-        int current = gd.heightHint > 0 ? gd.heightHint : styledText.getSize().y;
-        int minHeight = styledText.getLineHeight() * 2;
-        gd.heightHint = Math.max(minHeight, current + deltaY);
-        manualHeightHint = gd.heightHint;
-        layout(true, true);
-        onReflow.run();
-    }
-
-    /** Drops any manually dragged height and reverts to auto-sizing from the content. */
-    public void resetManualHeight() {
-        manualHeightHint = null;
-        refreshHeight();
     }
 
     public static record UndoRedoStack (int cursorPosition, String newText, String replacedText, int eventLength, int type) {

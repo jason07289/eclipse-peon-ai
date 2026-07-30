@@ -38,11 +38,13 @@ import org.eclipse.jface.text.ITextSelection;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.custom.SashForm;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Sash;
 import org.eclipse.ui.IWorkingSet;
 import org.sterl.llmpeon.AbstractChatService;
 import org.sterl.llmpeon.PeonMode;
@@ -119,6 +121,14 @@ public class AIChatView implements EclipseAiMonitor {
     private AtomicReference<LlmConfig> lastListedConfig = new AtomicReference<>();
     private volatile LlmConfig lastAppliedConfig = null;
 
+    /** Largest share of the view the input pane may claim while it is auto-sizing. */
+    private static final double MAX_AUTO_INPUT_RATIO = 0.6;
+    private static final String SASH_HOOKED = "peon.sashHooked";
+
+    private SashForm splitter;
+    /** Set once the user drags the divider — auto-sizing stops until they double-click it. */
+    private boolean inputManuallySized = false;
+
     private ChatMarkdownWidget chatHistory;
     private Composite inputBlock;
     private FileChangeReviewWidget fileChangeReview;
@@ -144,9 +154,16 @@ public class AIChatView implements EclipseAiMonitor {
         this.parent = parent;
         parent.setLayout(new GridLayout(1, false));
 
-        createChatHistoryWidget(parent);
-        createInputArea(parent);
+        // History and input are the two panes of a SashForm: SWT owns the divider, the drag
+        // and the re-layout, so nothing here has to push heights around by hand.
+        splitter = new SashForm(parent, SWT.VERTICAL);
+        splitter.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        splitter.setSashWidth(6);
+
+        createChatHistoryWidget(splitter);
+        createInputArea(splitter);
         createActionBars();
+        installSplitterBehavior();
 
         registerPreferenceListener();
         loadInitialConfig();
@@ -155,7 +172,6 @@ public class AIChatView implements EclipseAiMonitor {
 
     private void createChatHistoryWidget(Composite parent) {
         chatHistory = new ChatMarkdownWidget(parent, SWT.BORDER);
-        chatHistory.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
     }
 
     private void createInputArea(Composite parent) {
@@ -165,7 +181,6 @@ public class AIChatView implements EclipseAiMonitor {
         inputBlockLayout.marginHeight = 0;
         inputBlockLayout.verticalSpacing = 0;
         inputBlock.setLayout(inputBlockLayout);
-        inputBlock.setLayoutData(new GridData(SWT.FILL, SWT.BOTTOM, true, false));
 
         UserInputWidget.setDropActiveProjectSupplier(userContext::getCurrentProject);
 
@@ -194,7 +209,11 @@ public class AIChatView implements EclipseAiMonitor {
             this::doSendMessage,
             () -> getIProgressMonitor().setCanceled(true),
             this::onMicClick);
-        chatInput.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        // FILL + grab, never CENTER: the input is the row that absorbs whatever height the
+        // splitter hands out. A CENTER-aligned child keeps its preferred height and overflows
+        // the row instead, which clips the first text line.
+        chatInput.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        chatInput.setOnHeightChange(this::applyAutoInputHeight);
 
         questionWidget = new UserQuestionWidget(inputBlock, SWT.NONE, this::hideQuestion);
         GridData qgd = new GridData(SWT.FILL, SWT.CENTER, true, false);
@@ -228,6 +247,50 @@ public class AIChatView implements EclipseAiMonitor {
             this::onAgentsMdToggle,
             this::doCompressContext
         );
+    }
+
+    /**
+     * Wires the splitter: keep the input pane at its content height until the user drags the
+     * divider, and let a double-click hand control back to auto-sizing. SashForm builds its
+     * sashes during the first layout pass, so they are hooked lazily from the resize listener.
+     */
+    private void installSplitterBehavior() {
+        splitter.addListener(SWT.Resize, e -> {
+            hookSashes();
+            applyAutoInputHeight();
+        });
+    }
+
+    private void hookSashes() {
+        for (Control child : splitter.getChildren()) {
+            if (!(child instanceof Sash sash) || sash.getData(SASH_HOOKED) != null) continue;
+            sash.setData(SASH_HOOKED, Boolean.TRUE);
+            sash.setToolTipText("Drag to resize the input, double-click to auto-size");
+            // Selection only fires on an actual drag, so a plain click keeps auto-sizing on.
+            sash.addListener(SWT.Selection, e -> inputManuallySized = true);
+            sash.addListener(SWT.MouseDoubleClick, e -> {
+                inputManuallySized = false;
+                applyAutoInputHeight();
+            });
+        }
+    }
+
+    /**
+     * Gives the input pane exactly the height its content needs — the 2-to-7 row auto-grow of
+     * {@code TextInputWidget} plus the action and status bars — and the rest to the history.
+     * No-op once the user has sized the panes themselves.
+     */
+    private void applyAutoInputHeight() {
+        if (inputManuallySized || splitter == null || splitter.isDisposed()) return;
+        int total = splitter.getClientArea().height - splitter.getSashWidth();
+        // On the very first resize the panes may not be laid out yet, so fall back to the
+        // splitter width — otherwise this bails out and SashForm keeps its default 50/50 split.
+        int width = inputBlock.getSize().x > 0 ? inputBlock.getSize().x : splitter.getClientArea().width;
+        if (total <= 0 || width <= 0) return;
+
+        int wanted = inputBlock.computeSize(width, SWT.DEFAULT).y;
+        int inputHeight = Math.max(1, Math.min(wanted, (int) (total * MAX_AUTO_INPUT_RATIO)));
+        splitter.setWeights(new int[]{ Math.max(1, total - inputHeight), inputHeight });
     }
 
     private void registerPreferenceListener() {
@@ -782,7 +845,6 @@ public class AIChatView implements EclipseAiMonitor {
         boolean qs = aiService.getPeonMode() == PeonMode.QUERY_TO_SOURCE;
         setControlExcluded(queryBar, !qs);
         setControlExcluded(hintComposite, !qs);
-        chatInput.setResizable(qs);
         if (qs) {
             var config = aiService.getQueryToSourceMode().getConfig();
             queryBar.setSteps(config.steps());
@@ -790,7 +852,7 @@ public class AIChatView implements EclipseAiMonitor {
             updateQueryBarState();
         }
         inputBlock.layout(true, true);
-        inputBlock.getParent().layout(new Control[]{ inputBlock });
+        applyAutoInputHeight();   // the hint row and step bar change the input's content height
     }
 
     private void setControlExcluded(Control control, boolean excluded) {
@@ -1090,7 +1152,7 @@ public class AIChatView implements EclipseAiMonitor {
                 onAnswer.accept(a);
             });
             inputBlock.layout(true, true);
-            inputBlock.getParent().layout(new Control[]{ inputBlock });
+            applyAutoInputHeight();
         });
     }
 
