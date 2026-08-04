@@ -1004,6 +1004,7 @@ public class AIChatView implements EclipseAiMonitor {
         }
 
         active.setOneShotSystemPrompt(body);
+        active.setOneShotReadOnly(step.readOnly());
         var message = mode.messageFor(step, userText, fieldValues);
         mode.markPending(stepIndex, step);
         chatHistory.appendMessage(new SimpleMessage(Type.USER, message));

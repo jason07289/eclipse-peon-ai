@@ -72,6 +72,7 @@ list of steps. Each step has:
 | **Label** | Button text in the wizard bar |
 | **Kind** | What happens after the AI call (see below) |
 | **Prompt** | Command or skill to run (from your loaded `.md` files) |
+| **Read-only** | Runs the step without file-edit and shell tools (see below) |
 
 ### Step kinds
 
@@ -82,6 +83,13 @@ list of steps. Each step has:
   review bar.
 - **Review (검토)** — runs the prompt to review inputs and generated sources; the result
   stays in the chat (no automatic file changes).
+
+### Read-only steps
+
+**Read-only** is independent of the kind. When it is checked, that step runs without the
+file-edit and shell tools — the same lock plan mode uses — so the AI physically cannot change
+files no matter what the prompt says. MCP tools stay available. It is off by default on every
+step, including Review, so existing pipelines keep working exactly as before.
 
 ### Default example pipeline
 

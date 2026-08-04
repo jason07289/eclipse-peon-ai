@@ -60,6 +60,12 @@ public abstract class AbstractChatService {
      */
     private volatile String oneShotCommandSlug;
 
+    /**
+     * One-shot read-only lock. When set, the next {@link #call(String, AiMonitor)} runs without
+     * edit tools and clears the flag. Used by Query-to-Source steps configured as read-only.
+     */
+    private volatile boolean oneShotReadOnly;
+
     protected AbstractChatService(ConfiguredModel configuredModel, ToolService toolService) {
         this.toolService = toolService;
         this.configuredModel = configuredModel;
@@ -75,7 +81,20 @@ public abstract class AbstractChatService {
     protected Predicate<SmartToolExecutor> getToolFilter() {
         return p -> true;
     }
-    
+
+    /**
+     * The filter actually handed to the tool loop: {@link #getToolFilter()} plus the one-shot
+     * read-only lock, which drops every {@link org.sterl.llmpeon.tool.SmartTool#isEditTool()} tool
+     * the way {@link AiPlannerService} does for the whole PLAN mode.
+     *
+     * <p>This is the one place where the tool list is allowed to change between calls. A read-only
+     * step always ships its own one-shot system prompt, so the KV cache is invalidated from the
+     * first token anyway — the varying tool list costs nothing on top of that.</p>
+     */
+    Predicate<SmartToolExecutor> effectiveToolFilter(boolean readOnly) {
+        return readOnly ? getToolFilter().and(t -> !t.getTool().isEditTool()) : getToolFilter();
+    }
+
     protected boolean includesMcpTools() { return true; }
 
     public int tokenContextUsedInPercent() {
@@ -116,6 +135,7 @@ public abstract class AbstractChatService {
         }
 
         var slug = consumeOneShotCommandSlug();
+        var readOnly = consumeOneShotReadOnly();
         var originalConfig = configuredModel.getConfig();
 
         if (slug != null) {
@@ -134,7 +154,7 @@ public abstract class AbstractChatService {
                         .model(configuredModel)
                         .staticMessages(staticMessages)
                         .monitor(monitor)
-                        .toolFilter(getToolFilter())
+                        .toolFilter(effectiveToolFilter(readOnly))
                         .includeMcpTools(includesMcpTools())
                         .temperature(getTemperature())
                         .onLoop(this::updateTokenCount)
@@ -240,6 +260,20 @@ public abstract class AbstractChatService {
     private String consumeOneShotCommandSlug() {
         var value = oneShotCommandSlug;
         oneShotCommandSlug = null;
+        return value;
+    }
+
+    /**
+     * Runs the next {@link #call(String, AiMonitor)} without edit tools. Cleared by that call,
+     * so every following call is back to the service's normal tool set.
+     */
+    public void setOneShotReadOnly(boolean readOnly) {
+        this.oneShotReadOnly = readOnly;
+    }
+
+    private boolean consumeOneShotReadOnly() {
+        var value = oneShotReadOnly;
+        oneShotReadOnly = false;
         return value;
     }
 

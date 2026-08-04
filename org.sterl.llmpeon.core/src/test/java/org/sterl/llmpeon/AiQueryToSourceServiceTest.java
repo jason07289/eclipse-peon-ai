@@ -13,13 +13,36 @@ import dev.langchain4j.data.message.UserMessage;
 
 class AiQueryToSourceServiceTest {
 
+    /** Tool method name of {@code ShellTool#runOsCommand} — an edit tool. */
+    private static final String SHELL_TOOL = "runOsCommand";
+    /** Tool method name of {@code WebFetchTool#fetchAsMarkdown} — not an edit tool. */
+    private static final String WEB_FETCH_TOOL = "fetchAsMarkdown";
+
+    private ToolService toolService;
     private AiQueryToSourceService service;
 
     @BeforeEach
     void setUp() {
+        toolService = new ToolService();
         service = new AiQueryToSourceService(
                 new ConfiguredModel(LlmConfig.newOllama("test-model")),
-                new ToolService());
+                toolService);
+    }
+
+    @Test
+    void readOnlyCall_dropsEditToolsButKeepsReadTools() {
+        var filter = service.effectiveToolFilter(true);
+
+        assertThat(filter.test(toolService.getExecutor(SHELL_TOOL))).isFalse();
+        assertThat(filter.test(toolService.getExecutor(WEB_FETCH_TOOL))).isTrue();
+    }
+
+    @Test
+    void normalCall_keepsEditTools() {
+        var filter = service.effectiveToolFilter(false);
+
+        assertThat(filter.test(toolService.getExecutor(SHELL_TOOL))).isTrue();
+        assertThat(filter.test(toolService.getExecutor(WEB_FETCH_TOOL))).isTrue();
     }
 
     @Test

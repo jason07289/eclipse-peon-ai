@@ -35,9 +35,10 @@ public record QueryToSourceConfig(List<QueryStep> steps, boolean showStepNumbers
      * @param fields list of input fields (required/optional) to be collected before step execution
      * @param instruction additional step-specific guidance (shown in chat as [Additional Instructions])
      * @param hint user-friendly guidance shown above chat input when this step is next
+     * @param readOnly when true the step runs without edit tools (file writes, shell), like plan mode
      */
     public record QueryStep(String label, StepKind kind, String prompt, List<StepField> fields,
-            String instruction, String hint) {
+            String instruction, String hint, boolean readOnly) {
         public QueryStep {
             if (label == null) label = "";
             if (kind == null) kind = StepKind.TRANSFORM;
@@ -53,6 +54,11 @@ public record QueryToSourceConfig(List<QueryStep> steps, boolean showStepNumbers
 
         public QueryStep(String label, StepKind kind, String prompt, List<StepField> fields) {
             this(label, kind, prompt, fields, "", "");
+        }
+
+        public QueryStep(String label, StepKind kind, String prompt, List<StepField> fields,
+                String instruction, String hint) {
+            this(label, kind, prompt, fields, instruction, hint, false);
         }
     }
 

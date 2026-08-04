@@ -47,6 +47,21 @@ public class QueryToSourceModeServiceTest {
     }
 
     @Test
+    public void messageFor_announcesReadOnlyStep() {
+        var step = new QueryStep("검토", StepKind.REVIEW, "rev",
+                java.util.List.of(), "", "", true);
+        var msg = modeService.messageFor(step, "SELECT 1");
+        assertContains(msg, QueryToSourceModeService.READ_ONLY_NOTICE);
+    }
+
+    @Test
+    public void messageFor_staysSilentForWritableStep() {
+        var step = new QueryStep("검토", StepKind.REVIEW, "rev");
+        var msg = modeService.messageFor(step, "SELECT 1");
+        assertFalse(msg.contains("[Read-only step]"));
+    }
+
+    @Test
     public void messageFor_acceptsFreeFormNotes() {
         var step = new QueryStep("DAO 생성", StepKind.GENERATE, "dao");
         var msg = modeService.messageFor(step, "Use package com.example.dao and table USERS");

@@ -32,6 +32,9 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
     /** Shown for a configured prompt whose skill/command is no longer loaded. */
     private static final String UNKNOWN_TAG = "[?]";
 
+    /** Fixed width of the read-only checkmark column; the other columns share what is left. */
+    private static final int READ_ONLY_COL_WIDTH = 60;
+
     private static final String[] KIND_LABELS = {
             "질의 변환 (Transform)",
             "코드 생성 (Generate)",
@@ -116,16 +119,22 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
         var colFields = new TableColumn(stepTable, SWT.NONE);
         colFields.setText("Fields");
         colFields.setWidth(150);
+        var colReadOnly = new TableColumn(stepTable, SWT.CENTER);
+        colReadOnly.setText("R/O");
+        colReadOnly.setWidth(READ_ONLY_COL_WIDTH);
 
         // Share the available width instead of overflowing into a horizontal scrollbar.
         stepTable.addListener(SWT.Resize, e -> {
             int w = stepTable.getClientArea().width;
             if (w <= 0) return;
-            colLabel.setWidth((int) (w * 0.22));
-            colKind.setWidth((int) (w * 0.25));
-            colPrompt.setWidth((int) (w * 0.30));
+            // The read-only flag is a fixed-width checkmark; the rest share what is left.
+            int rest = Math.max(0, w - READ_ONLY_COL_WIDTH);
+            colLabel.setWidth((int) (rest * 0.22));
+            colKind.setWidth((int) (rest * 0.25));
+            colPrompt.setWidth((int) (rest * 0.30));
             colFields.setWidth(Math.max(0,
-                    w - colLabel.getWidth() - colKind.getWidth() - colPrompt.getWidth()));
+                    rest - colLabel.getWidth() - colKind.getWidth() - colPrompt.getWidth()));
+            colReadOnly.setWidth(READ_ONLY_COL_WIDTH);
         });
 
         stepTable.addListener(SWT.Selection, e -> updateButtonStates());
@@ -195,6 +204,7 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
                     .map(f -> f.required() ? f.label() + "*" : f.label())
                     .collect(java.util.stream.Collectors.joining(", "));
             item.setText(3, fieldsText);
+            item.setText(4, step.readOnly() ? "✓" : "");
         }
         updateButtonStates();
     }
@@ -345,6 +355,7 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
         private Text txtLabel;
         private Combo cmbKind;
         private Combo cmbPrompt;
+        private Button chkReadOnly;
         private Table fieldsTable;
         private Text txtHint;
         private Text txtInstruction;
@@ -406,6 +417,12 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
 
             addLabel(container, "Prompt:");
             cmbPrompt = buildPromptCombo(container, initialStep != null ? initialStep.prompt() : "");
+
+            addLabel(container, "Read-only:");
+            chkReadOnly = new Button(container, SWT.CHECK);
+            chkReadOnly.setText("이 스텝에서는 파일 수정 / 셸 실행 툴을 비활성화");
+            chkReadOnly.setSelection(initialStep != null && initialStep.readOnly());
+            chkReadOnly.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
             var fieldsLabel = new Label(container, SWT.NONE);
             fieldsLabel.setText("Fields:");
@@ -483,7 +500,8 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
                     promptValue(cmbPrompt),
                     new java.util.ArrayList<>(currentFields),
                     txtInstruction.getText().trim(),
-                    txtHint.getText().trim());
+                    txtHint.getText().trim(),
+                    chkReadOnly.getSelection());
             super.okPressed();
         }
 

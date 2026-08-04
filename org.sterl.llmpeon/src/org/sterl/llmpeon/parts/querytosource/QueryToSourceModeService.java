@@ -27,6 +27,11 @@ public class QueryToSourceModeService {
     public static final String FALLBACK_INPUT =
             "(No new input in this message — use the conversation history and workspace context.)";
 
+    /** Prepended to the step message when the step is configured read-only. */
+    public static final String READ_ONLY_NOTICE =
+            "[Read-only step] File edit and shell tools are disabled for this step. "
+            + "Report findings in the chat only.";
+
     private final AiQueryToSourceService service;
 
     private volatile QueryToSourceConfig config = QueryToSourceConfig.defaults();
@@ -109,6 +114,9 @@ public class QueryToSourceModeService {
         var instructionBlock = step.instruction().isBlank()
                 ? "" : "[Additional Instructions]\n" + step.instruction().strip();
         var parts = new java.util.ArrayList<String>();
+        // The edit tools are already withheld from the request; say so, otherwise the model keeps
+        // reaching for tools it cannot see and reports a permission problem instead of an answer.
+        if (step.readOnly()) parts.add(READ_ONLY_NOTICE);
         if (!fieldsBlock.isEmpty()) parts.add(fieldsBlock);
         if (!instructionBlock.isEmpty()) parts.add(instructionBlock);
         parts.add(input);

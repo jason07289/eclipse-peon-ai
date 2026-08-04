@@ -38,6 +38,27 @@ class QueryToSourceConfigSerdeTest {
     }
 
     @Test
+    void roundTripsReadOnlyFlag() throws Exception {
+        var original = new QueryToSourceConfig(List.of(
+                new QueryStep("검토", StepKind.REVIEW, "review-cmd", List.of(), "", "", true),
+                new QueryStep("생성", StepKind.GENERATE, "gen-cmd")));
+
+        var restored = MAPPER.readValue(MAPPER.writeValueAsString(original), QueryToSourceConfig.class);
+
+        assertThat(restored.steps()).extracting(QueryStep::readOnly)
+                .containsExactly(true, false);
+    }
+
+    @Test
+    void jsonWithoutReadOnlyDefaultsToWritableStep() throws Exception {
+        var config = MAPPER.readValue(
+                "{\"steps\":[{\"label\":\"X\",\"kind\":\"REVIEW\",\"prompt\":\"p\"}]}",
+                QueryToSourceConfig.class);
+
+        assertThat(config.steps().get(0).readOnly()).isFalse();
+    }
+
+    @Test
     void preservesStepOrder() throws Exception {
         var steps = List.of(
                 new QueryStep("A", StepKind.TRANSFORM, "p1"),
