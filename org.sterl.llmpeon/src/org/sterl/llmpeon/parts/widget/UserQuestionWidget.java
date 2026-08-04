@@ -61,10 +61,12 @@ public class UserQuestionWidget extends Composite {
         inputRowLayout.marginHeight = 0;
         inputRowLayout.horizontalSpacing = 4;
         inputRow.setLayout(inputRowLayout);
-        inputRow.setLayoutData(new GridData(SWT.FILL, SWT.BOTTOM, true, false));
+        // The question and its options keep their preferred height; whatever the splitter hands
+        // this widget beyond that goes to the answer field, mirroring the main chat input.
+        inputRow.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
         textInput = new TextInputWidget(inputRow, SWT.NONE, 7, this::requestReflow);
-        textInput.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        textInput.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         textInput.setBackground(bgWhite);
 
         // Enter submits; Shift+Enter inserts newline.
@@ -80,12 +82,12 @@ public class UserQuestionWidget extends Composite {
 
         Button cancelButton = new Button(inputRow, SWT.PUSH);
         cancelButton.setText("Cancel");
-        cancelButton.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
+        cancelButton.setLayoutData(new GridData(SWT.RIGHT, SWT.BOTTOM, false, false));
         cancelButton.addListener(SWT.Selection, e -> cancel());
 
         Button submitButton = new Button(inputRow, SWT.PUSH);
         submitButton.setText("Answer");
-        submitButton.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
+        submitButton.setLayoutData(new GridData(SWT.RIGHT, SWT.BOTTOM, false, false));
         submitButton.addListener(SWT.Selection, e -> doSubmit());
     }
 

@@ -220,7 +220,10 @@ public class AIChatView implements EclipseAiMonitor {
         chatInput.setOnHeightChange(this::applyAutoInputHeight);
 
         questionWidget = new UserQuestionWidget(inputBlock, SWT.NONE, this::hideQuestion);
-        GridData qgd = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        // Same FILL + grab as chatInput: while a question is up the input is excluded, so this is
+        // the only child left to absorb the pane height the splitter hands out. Without the grab
+        // a drag just leaves blank space below the question.
+        GridData qgd = new GridData(SWT.FILL, SWT.FILL, true, true);
         qgd.exclude = true;
         questionWidget.setLayoutData(qgd);
         questionWidget.setVisible(false);
