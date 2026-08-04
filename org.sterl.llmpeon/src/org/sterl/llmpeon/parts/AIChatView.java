@@ -1229,8 +1229,7 @@ public class AIChatView implements EclipseAiMonitor {
         EclipseUtil.runInUiThread(parent, () -> {
             setControlExcluded(chatInput, true);
             setControlExcluded(queryBar, true);
-            ((GridData) questionWidget.getLayoutData()).exclude = false;
-            questionWidget.setVisible(true);
+            setControlExcluded(questionWidget, false);
             questionWidget.showQuestion(question, answers, a -> {
                 chatHistory.appendMessage(new SimpleMessage(Type.USER, a));
                 onAnswer.accept(a);
@@ -1241,9 +1240,11 @@ public class AIChatView implements EclipseAiMonitor {
     }
 
     private void hideQuestion() {
-        ((GridData) questionWidget.getLayoutData()).exclude = true;
-        questionWidget.setVisible(false);
+        setControlExcluded(questionWidget, true);
         questionWidget.hideQuestion();
+        // showQuestion() took the chat input out of the layout; put it back before the mode
+        // decides about the step bar, otherwise the input area stays gone for good.
+        setControlExcluded(chatInput, false);
         // Restore the correct input area for the active mode.
         updateInputForMode();
     }
