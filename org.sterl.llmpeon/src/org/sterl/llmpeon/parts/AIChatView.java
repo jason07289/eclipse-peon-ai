@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -79,7 +80,9 @@ import org.sterl.llmpeon.querytosource.StepKind;
 import org.sterl.llmpeon.shared.OnPartialAiResponse;
 import org.sterl.llmpeon.shared.FileUtils;
 import org.sterl.llmpeon.shared.StringUtil;
+import org.sterl.llmpeon.parts.config.SurveyPreferenceInitializer;
 import org.sterl.llmpeon.shared.model.SimplePromptFile;
+import org.sterl.llmpeon.survey.SurveyService;
 import org.sterl.llmpeon.tool.model.SimpleMessage;
 import org.sterl.llmpeon.tool.model.SimpleMessage.Type;
 import org.sterl.llmpeon.tool.tools.ShellTool;
@@ -144,6 +147,13 @@ public class AIChatView implements EclipseAiMonitor {
 
     private final UserContext userContext = new UserContext();
 
+    /** Slug of the slash command of the running request; survives until the request finishes. */
+    private final AtomicReference<String> pendingSurveySlug = new AtomicReference<>();
+    /** Active survey bar context; consumed by a matching vote/dismiss token. */
+    private final AtomicReference<ShownSurvey> shownSurvey = new AtomicReference<>();
+
+    private record ShownSurvey(String slug, String token) {}
+
     private final IPreferenceChangeListener prefListener = event -> {
         EclipseUtil.runInUiThread(parent, this::applyConfig);
     };
@@ -176,6 +186,8 @@ public class AIChatView implements EclipseAiMonitor {
 
     private void createChatHistoryWidget(Composite parent) {
         chatHistory = new ChatMarkdownWidget(parent, SWT.BORDER);
+        chatHistory.setSurveyVoteHandler(this::sendSurveyVote);
+        chatHistory.setSurveyDismissHandler(this::dismissSurvey);
     }
 
     private void createInputArea(Composite parent) {
@@ -415,6 +427,8 @@ public class AIChatView implements EclipseAiMonitor {
             s.clear();
         }
         chatHistory.clear();
+        // the survey bar goes away with the history, so nothing is left to vote on
+        shownSurvey.set(null);
         keepFileChanges();
         statusLine.updateCompact(s.getContextSize(), s.getAutoCompactAfter());
     }
@@ -1188,12 +1202,64 @@ public class AIChatView implements EclipseAiMonitor {
                 if (lastAppliedConfig != null && lastAppliedConfig.isDebugMode()) {
                     LOG.info("Chatreponse: " + (cr == null ? "null" : cr.aiMessage()));
                 }
+                boolean canceled = isCanceled();
                 monitor.done();
                 monitorRef.set(new NullProgressMonitor());
                 EclipseUtil.runInUiThread(parent, () -> lockWhileWorking(false));
+                maybeShowSurvey(canceled);
             }
             return PeonConstants.status("Peon AI\n" + aiService.getConfig(), ex);
         }).schedule();
+    }
+
+    /**
+     * Offers the satisfaction survey after a slash command run. Only commands carrying a
+     * frontmatter slug are surveyed — the slug is both the opt-in signal and the score's comment.
+     */
+    private void maybeShowSurvey(boolean canceled) {
+        var slug = pendingSurveySlug.getAndSet(null);
+        if (slug == null || canceled) return;
+
+        var config = SurveyPreferenceInitializer.load();
+        if (!config.isUsable()) return;
+        if (!SurveyPreferenceInitializer.consumeCooldown(slug, config.effectiveCooldownMinutes())) return;
+
+        var shown = new ShownSurvey(slug, UUID.randomUUID().toString());
+        shownSurvey.set(shown);
+        EclipseUtil.runInUiThread(parent, () -> chatHistory.appendSurvey(shown.token()));
+    }
+
+    /**
+     * Posts the score in the background. Failures stay in the log: a survey must never interrupt
+     * the user, which is the whole point of replacing the old {@code askUser} flow.
+     */
+    private void sendSurveyVote(String token, int value) {
+        if (value != SurveyService.VALUE_SATISFIED && value != SurveyService.VALUE_UNSATISFIED) return;
+
+        var shown = consumeShownSurvey(token);
+        if (shown == null) return;
+
+        var config = SurveyPreferenceInitializer.load();
+        Job.create("Peon AI survey", monitor -> {
+            var result = new SurveyService().send(config, shown.slug(), value);
+            if (!result.success()) LOG.info("Survey score not sent: " + result.message());
+            return PeonConstants.okStatus("Survey score submitted");
+        }).schedule();
+    }
+
+    /** Dismisses the currently shown survey if the token matches the active survey bar. */
+    private void dismissSurvey(String token) {
+        consumeShownSurvey(token);
+    }
+
+    /** Atomically consumes the shown survey only when {@code token} matches. */
+    private ShownSurvey consumeShownSurvey(String token) {
+        if (StringUtil.hasNoValue(token)) return null;
+        while (true) {
+            var current = shownSurvey.get();
+            if (current == null || !current.token().equals(token)) return null;
+            if (shownSurvey.compareAndSet(current, null)) return current;
+        }
     }
 
     private void onPinChange(boolean pinned) {
@@ -1289,6 +1355,8 @@ public class AIChatView implements EclipseAiMonitor {
             var prompt = command.get().readBody();
             active.setOneShotSystemPrompt(prompt);
             active.setOneShotCommandSlug(command.get().slug());
+            // call() consumes the slug, so keep our own copy for the survey after the run.
+            pendingSurveySlug.set(command.get().slug());
         } else {
             if (!commandService.hasCommands()) return;
             var available = commandService.commandNames();

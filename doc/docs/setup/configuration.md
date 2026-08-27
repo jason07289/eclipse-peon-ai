@@ -255,6 +255,51 @@ Different AI providers have different maximum context window capabilities:
 
 The **Supports Thinking** option enables models that support "thinking" or chain-of-thought reasoning, allowing them to show intermediate reasoning steps before generating final responses. This is useful for complex problem-solving tasks where you want to see the model's thought process.
 
+### Satisfaction Survey
+
+After a slash command finishes, the chat can offer a one-click satisfaction rating. The bar sits
+below the last response and is entirely passive: the chat input stays usable, and ignoring the bar
+simply lets it scroll out of view.
+
+Open **Window > Preferences > AI Peon > AI Peon Configuration** and click
+**Survey Settings...** (below *Settings version*).
+
+| Field | Meaning |
+|-------|---------|
+| Enable satisfaction survey | Master switch. Off by default. |
+| URL | `POST` endpoint receiving the score, e.g. `http://host:port/api/public/scores` |
+| Auth (publicKey:secretKey) | Basic auth credentials, sent as an `Authorization: Basic` header. Empty by default — the plugin ships no credentials, so keys can be rotated here without a new build. |
+| Cooldown (minutes) | How long the *same* command stays quiet after a survey was shown. Default `30`. |
+
+**What gets sent** — a single JSON `POST`:
+
+```json
+{
+  "id": "<random UUID v4>",
+  "traceId": "<a second, independent UUID v4>",
+  "name": "<local IPv4 address of this workstation>",
+  "value": 2,
+  "dataType": "NUMERIC",
+  "comment": "<the command's frontmatter slug>"
+}
+```
+
+`value` is `2` for satisfied and `1` for unsatisfied. Nothing is sent unless the user actually
+clicks a button, and a failed request is only written to the Eclipse error log — it never surfaces
+a dialog.
+
+::: tip Which commands are surveyed?
+Only slash commands whose frontmatter defines a `slug`. The slug is both the opt-in signal and the
+value submitted as `comment`, so commands without one are never surveyed. See
+[Commands](./commands.md).
+:::
+
+::: warning The cooldown is local
+The last-shown timestamp is stored per command in the Eclipse workspace preferences
+(`survey.lastShown.<slug>`). It is never sent to or read from the survey server, and switching
+workspaces resets it.
+:::
+
 ## Testing the Connection
 
 1. Open the Peon AI chat view

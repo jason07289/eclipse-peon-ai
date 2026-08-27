@@ -27,11 +27,28 @@ Example:
 ```markdown
 ---
 description: Review the code carefully and report findings.
+slug: dev-code-04
 ---
 # Review Command
 
 Review the code and report any issues.
 ```
+
+| Key | Effect |
+|-----|--------|
+| `name` | Overrides the command name (defaults to the filename without `.md`) |
+| `description` | Shown in the slash menu |
+| `slug` | Sent as the `x-litellm-tags` header, and used as the satisfaction survey's grouping key |
+
+::: tip `slug` opts a command into the satisfaction survey
+When [the survey is enabled](./configuration.md#satisfaction-survey), a command that defines a
+`slug` shows a one-click rating bar in the chat after it finishes, and submits the slug as the
+score's `comment`. Commands without a `slug` are never surveyed.
+
+Do **not** write the survey into the command body — asking with `askUser` blocks the chat input
+until the user answers, and driving `curl` through `runOsCommand()` depends on the OS shell. The
+plugin handles both parts now.
+:::
 
 ## Usage
 

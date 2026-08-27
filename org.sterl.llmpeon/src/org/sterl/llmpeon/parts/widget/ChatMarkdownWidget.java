@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import org.eclipse.core.runtime.FileLocator;
 import org.eclipse.core.runtime.Path;
@@ -32,7 +34,14 @@ import dev.langchain4j.data.message.ChatMessage;
 
 public class ChatMarkdownWidget extends Composite {
 
+    /** Navigation prefixes the embedded page uses to call back into Eclipse. */
+    private static final String OPEN_IN_EDITOR_PREFIX = "open-in-editor:";
+    private static final String SURVEY_VOTE_PREFIX = "peon-survey-vote:";
+    private static final String SURVEY_DISMISS_PREFIX = "peon-survey-dismiss:";
+
     private final Browser browser;
+    private volatile BiConsumer<String, Integer> surveyVoteHandler;
+    private volatile Consumer<String> surveyDismissHandler;
     private final ObjectMapper mapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
     private String chatHtml = null;
@@ -50,11 +59,25 @@ public class ChatMarkdownWidget extends Composite {
         browser.addLocationListener(new LocationListener() {
             @Override
             public void changing(LocationEvent event) {
-                final String prefix = "open-in-editor:";
-                if (event.location == null || !event.location.startsWith(prefix)) return;
-                event.doit = false;
-                EclipseUtil.openWorkspacePathInEditor(
-                        URLDecoder.decode(event.location.substring(prefix.length()), StandardCharsets.UTF_8));
+                if (event.location == null) return;
+
+                if (event.location.startsWith(OPEN_IN_EDITOR_PREFIX)) {
+                    event.doit = false;
+                    EclipseUtil.openWorkspacePathInEditor(URLDecoder.decode(
+                            event.location.substring(OPEN_IN_EDITOR_PREFIX.length()), StandardCharsets.UTF_8));
+                    return;
+                }
+
+                if (event.location.startsWith(SURVEY_VOTE_PREFIX)) {
+                    event.doit = false;
+                    onSurveyVote(event.location.substring(SURVEY_VOTE_PREFIX.length()));
+                    return;
+                }
+
+                if (event.location.startsWith(SURVEY_DISMISS_PREFIX)) {
+                    event.doit = false;
+                    onSurveyDismiss(event.location.substring(SURVEY_DISMISS_PREFIX.length()));
+                }
             }
 
             @Override
@@ -108,6 +131,65 @@ public class ChatMarkdownWidget extends Composite {
     
     public void hideLiveStatus() {
         browser.execute("hideLiveStatus();");
+    }
+
+    /**
+     * Shows the satisfaction survey bar below the last message. Purely passive — the chat input
+     * stays usable and an ignored bar just scrolls away.
+     */
+    public void appendSurvey(String token) {
+        try {
+            browser.execute("appendSurvey(" + mapper.writeValueAsString(token) + ");");
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Registers the handler invoked with the survey token and score value (2 = satisfied,
+     * 1 = not) when the user clicks a survey button. Runs on the UI thread, so the handler must
+     * not block.
+     */
+    public void setSurveyVoteHandler(BiConsumer<String, Integer> handler) {
+        this.surveyVoteHandler = handler;
+    }
+
+    /**
+     * Registers the handler invoked when the survey is dismissed. The token identifies which
+     * survey instance got closed.
+     */
+    public void setSurveyDismissHandler(Consumer<String> handler) {
+        this.surveyDismissHandler = handler;
+    }
+
+    private void onSurveyVote(String rawPayload) {
+        var handler = surveyVoteHandler;
+        if (handler == null || rawPayload == null) return;
+        int separator = rawPayload.lastIndexOf(':');
+        if (separator <= 0 || separator == rawPayload.length() - 1) return;
+
+        var rawToken = rawPayload.substring(0, separator);
+        var rawValue = rawPayload.substring(separator + 1);
+        try {
+            var token = URLDecoder.decode(rawToken, StandardCharsets.UTF_8);
+            int value = Integer.parseInt(rawValue);
+            if (value != 1 && value != 2) return;
+            handler.accept(token, value);
+        } catch (RuntimeException e) {
+            // malformed token/value is ignored quietly
+        }
+    }
+
+    private void onSurveyDismiss(String rawToken) {
+        var handler = surveyDismissHandler;
+        if (handler == null || rawToken == null) return;
+        try {
+            var token = URLDecoder.decode(rawToken, StandardCharsets.UTF_8);
+            if (token.isBlank()) return;
+            handler.accept(token);
+        } catch (RuntimeException e) {
+            // malformed token is ignored quietly
+        }
     }
 
     public void onStreamingChunk(OnPartialAiResponse r) {

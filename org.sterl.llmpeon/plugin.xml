@@ -43,6 +43,7 @@
       <initializer class="org.sterl.llmpeon.parts.config.McpPreferenceInitializer"/>
       <initializer class="org.sterl.llmpeon.parts.config.VoicePreferenceInitializer"/>
       <initializer class="org.sterl.llmpeon.parts.config.QueryToSourcePreferenceInitializer"/>
+      <initializer class="org.sterl.llmpeon.parts.config.SurveyPreferenceInitializer"/>
    </extension>
 
 </plugin>

@@ -45,6 +45,13 @@ public interface PeonConstants {
 
     String PREF_AGENTS_MD_ENABLED  = "agentsMd.enabled";   // boolean, default true
 
+    String PREF_SURVEY_ENABLED     = "survey.enabled";          // boolean, default false
+    String PREF_SURVEY_URL         = "survey.url";              // POST endpoint for the score
+    String PREF_SURVEY_AUTH        = "survey.auth";             // basic auth "publicKey:secretKey"
+    String PREF_SURVEY_COOLDOWN    = "survey.cooldownMinutes";  // int, default 30
+    /** Prefix + command slug -> epoch millis of the last shown survey. Local to this workspace. */
+    String PREF_SURVEY_LAST_PREFIX = "survey.lastShown.";
+
     public static IStatus okStatus(String message) {
         return new Status(IStatus.OK, PLUGIN_ID, message);
     }

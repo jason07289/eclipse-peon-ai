@@ -246,6 +246,42 @@
         .message.diff .d2h-file-name:hover {
             text-decoration: none;
         }
+
+        /* Satisfaction survey — deliberately quiet: ignoring it costs nothing. */
+        .survey {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+            font-size: 12px;
+            color: #57606a;
+        }
+
+        .survey button {
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            background: #f6f8fa;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            padding: 3px 8px;
+        }
+
+        .survey button:hover {
+            background: #eaeef2;
+        }
+
+        .survey .dismiss {
+            margin-left: auto;
+            border: none;
+            background: none;
+            color: #8c959f;
+            font-size: 12px;
+        }
+
+        .survey.done {
+            color: #1a7f37;
+        }
     </style>
 
     <script src="./highlight.min.js"></script>
@@ -354,7 +390,47 @@
             window.scrollTo(0, document.body.scrollHeight);
         }
 
+        /**
+         * Appends the satisfaction survey bar. It is intentionally passive: doing nothing simply
+         * lets it scroll out of view, and the chat input is never taken away.
+         */
+        function appendSurvey(token) {
+            hideLiveStatus();
+            if (!token) return;
+            // Only one open survey at a time — drop an earlier unanswered one.
+            document.querySelectorAll(".survey:not(.done)").forEach(el => el.remove());
+            const div = document.createElement("div");
+            div.className = "survey";
+            div.dataset.token = token;
+            div.innerHTML = '<span>이번 결과 어떠셨나요?</span>'
+                + '<button data-value="2" title="만족">&#128522;</button>'
+                + '<button data-value="1" title="불만족">&#128542;</button>'
+                + '<button class="dismiss" title="닫기">&#10005;</button>';
+            document.getElementById("chat").appendChild(div);
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
         document.addEventListener("click", e => {
+            const surveyBtn = e.target.closest(".survey button");
+            if (surveyBtn) {
+                const bar = surveyBtn.closest(".survey");
+                const token = bar?.dataset?.token || "";
+                if (surveyBtn.classList.contains("dismiss")) {
+                    if (token) window.location.href = "peon-survey-dismiss:" + encodeURIComponent(token);
+                    bar.remove();
+                    return;
+                }
+                const value = surveyBtn.dataset.value;
+                if (value !== "1" && value !== "2") return;
+                if (!token) {
+                    bar.remove();
+                    return;
+                }
+                bar.className = "survey done";
+                bar.textContent = "피드백을 주셔서 감사합니다!";
+                window.location.href = "peon-survey-vote:" + encodeURIComponent(token) + ":" + value;
+                return;
+            }
             const name = e.target.closest(".d2h-file-name");
             if (name) {
                 const path = (name.textContent || "").trim();

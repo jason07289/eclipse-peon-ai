@@ -95,6 +95,7 @@ public class AiConfigPreferenceView extends FieldEditorPreferencePage implements
         buildQueryToSourceSettingsButton();
         addField(new StringFieldEditor(PeonConstants.PREF_UPDATE_URL, "Update URL:", getFieldEditorParent()));
         buildSettingsVersionLabel();
+        buildSurveySettingsButton();
 
         // -- Debug stuff
         addField(new BooleanFieldEditor(PeonConstants.PREF_LOG_RESPONSE, "Debug mode (logs requests & responses)", getFieldEditorParent()));
@@ -176,6 +177,21 @@ public class AiConfigPreferenceView extends FieldEditorPreferencePage implements
             var dialog = new QueryToSourceSettingsDialog(getShell(), config, availablePromptOptions());
             if (dialog.open() == IDialogConstants.OK_ID && dialog.getResult() != null) {
                 QueryToSourcePreferenceInitializer.save(dialog.getResult());
+            }
+        });
+    }
+
+    private void buildSurveySettingsButton() {
+        Button btnSurvey = new Button(getFieldEditorParent(), SWT.PUSH);
+        btnSurvey.setText("Survey Settings...");
+        btnSurvey.setToolTipText("Configure the satisfaction survey shown after a slash command run");
+        GridData gd = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        gd.horizontalSpan = 2;
+        btnSurvey.setLayoutData(gd);
+        btnSurvey.addListener(SWT.Selection, e -> {
+            var dialog = new SurveySettingsDialog(getShell(), SurveyPreferenceInitializer.load());
+            if (dialog.open() == IDialogConstants.OK_ID && dialog.getResult() != null) {
+                SurveyPreferenceInitializer.save(dialog.getResult());
             }
         });
     }
