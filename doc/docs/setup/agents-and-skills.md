@@ -49,6 +49,19 @@ Spring Boot REST API, Java 21.
 
 Both `AGENTS.md` and `agents.md` work.
 
+## Global AGENTS.md
+
+Rules that are yours, not the project's — tone, language, review habits — belong in the
+global agents file. Set **Global AGENTS.md** in **Window > Preferences > Peon AI**; it
+defaults to `~/.claude/AGENTS.md`. A directory works too, then the same file names as
+above are looked up inside it. Leave the field empty to turn it off.
+
+It is sent before the project `AGENTS.md`, so project rules win when both talk about the
+same topic. The `AGENTS.md` toggle in the chat status line switches both off at once, and
+the status line shows `AGENTS.md (global)` when only the global file was found.
+
+Keep it even shorter than a project file — it rides along in *every* chat, in every project.
+
 ## Skills
 
 Skills are reusable instruction sets shared across all your projects.
