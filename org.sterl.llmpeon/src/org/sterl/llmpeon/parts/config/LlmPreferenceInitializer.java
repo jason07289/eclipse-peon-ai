@@ -46,8 +46,14 @@ public class LlmPreferenceInitializer extends AbstractPreferenceInitializer {
         defaults.put(PeonConstants.PREF_QUERY_PARAMS, "");
         defaults.put(PeonConstants.PREF_HEADER_PARAMS, "");
         defaults.putBoolean(PeonConstants.PREF_AGENTS_MD_ENABLED, true);
+        defaults.put(PeonConstants.PREF_GLOBAL_AGENTS_MD, defaultGlobalAgentsMd());
     }
     
+    /** Default location of the user global AGENTS.md, next to the default skills and commands. */
+    public static String defaultGlobalAgentsMd() {
+        return Path.of(System.getProperty("user.home"), ".claude", "AGENTS.md").toString();
+    }
+
     public static LlmConfig buildWithDefaults() {
         var prefs = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
 

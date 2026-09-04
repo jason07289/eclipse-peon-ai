@@ -160,6 +160,7 @@ public class AIChatView implements EclipseAiMonitor {
     
     private final StandingOrdersBuilder standingOrders = new StandingOrdersBuilder()
             .add(aiService)
+            .add(aiService.getAgentsMdService().globalProvider())
             .add(aiService.getAgentsMdService())
             .add(userContext);
 
@@ -766,11 +767,15 @@ public class AIChatView implements EclipseAiMonitor {
         statusLine.updateCompact(ai.getContextSize(), ai.getAutoCompactAfter());
     }
 
-    private void syncAgentsMdToggle() {
+    private void syncAgentsMd() {
         var prefs = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
         boolean enabled = prefs.getBoolean(PeonConstants.PREF_AGENTS_MD_ENABLED, true);
         statusLine.setAgentsMdEnabled(enabled);
-        aiService.getAgentsMdService().setEnabled(enabled);
+
+        var agentsMd = aiService.getAgentsMdService();
+        agentsMd.setEnabled(enabled);
+        agentsMd.loadGlobal(prefs.get(PeonConstants.PREF_GLOBAL_AGENTS_MD,
+                LlmPreferenceInitializer.defaultGlobalAgentsMd()));
     }
 
     private void refreshChat() {
@@ -793,8 +798,13 @@ public class AIChatView implements EclipseAiMonitor {
     // -------------------------------------------------------------------------
 
     private void applyConfig() {
+        // the AGENTS.md settings are not part of the LlmConfig, sync them before the unchanged exit
+        syncAgentsMd();
         var config = LlmPreferenceInitializer.buildWithDefaults();
-        if (lastAppliedConfig != null && lastAppliedConfig.equals(config)) return;
+        if (lastAppliedConfig != null && lastAppliedConfig.equals(config)) {
+            refreshStatusLine();
+            return;
+        }
         lastAppliedConfig = config;
         LOG.info("Set new config " + config);
         try {
@@ -813,7 +823,6 @@ public class AIChatView implements EclipseAiMonitor {
         actionsBar.setThinkEnabled(config.isThinkingEnabled());
         applyMcpConfig();
         chatInput.setVoiceInputVisible(VoicePreferenceInitializer.buildWithDefaults().enabled());
-        syncAgentsMdToggle();
         refreshStatusLine();
         reloadModelsIfNeeded();
         applyShellCommandConfirmation();

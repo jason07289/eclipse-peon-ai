@@ -44,6 +44,8 @@ public interface PeonConstants {
 
 
     String PREF_AGENTS_MD_ENABLED  = "agentsMd.enabled";   // boolean, default true
+    /** File or directory holding the user global AGENTS.md, empty = none. Default ~/.claude/AGENTS.md */
+    String PREF_GLOBAL_AGENTS_MD   = "agentsMd.globalFile";
 
     String PREF_SURVEY_ENABLED     = "survey.enabled";          // boolean, default false
     String PREF_SURVEY_URL         = "survey.url";              // POST endpoint for the score

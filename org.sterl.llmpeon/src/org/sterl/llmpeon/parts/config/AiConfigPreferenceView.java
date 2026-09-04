@@ -92,6 +92,10 @@ public class AiConfigPreferenceView extends FieldEditorPreferencePage implements
 
         addField(new StringFieldEditor(PeonConstants.PREF_SKILL_DIRECTORY, "Skills directory:", getFieldEditorParent()));
         addField(new StringFieldEditor(PeonConstants.PREF_COMMAND_DIRECTORY, "Commands directory:", getFieldEditorParent()));
+        var globalAgentsMdEditor = new StringFieldEditor(PeonConstants.PREF_GLOBAL_AGENTS_MD, "Global AGENTS.md:", getFieldEditorParent());
+        globalAgentsMdEditor.getLabelControl(getFieldEditorParent())
+            .setToolTipText("File or directory with rules sent for every project, e.g. ~/.claude/AGENTS.md. Empty = none.");
+        addField(globalAgentsMdEditor);
         buildQueryToSourceSettingsButton();
         addField(new StringFieldEditor(PeonConstants.PREF_UPDATE_URL, "Update URL:", getFieldEditorParent()));
         buildSettingsVersionLabel();
