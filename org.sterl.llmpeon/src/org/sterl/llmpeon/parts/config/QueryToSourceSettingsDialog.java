@@ -74,7 +74,7 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
 
     public QueryToSourceSettingsDialog(Shell parent, QueryToSourceConfig initial, List<PromptOption> availablePrompts) {
         super(parent);
-        this.initial = initial == null ? QueryToSourceConfig.defaults() : initial;
+        this.initial = initial == null ? QueryToSourceConfig.empty() : initial;
         this.availablePrompts = availablePrompts == null ? List.of() : availablePrompts;
     }
 
@@ -82,7 +82,8 @@ public class QueryToSourceSettingsDialog extends TitleAreaDialog {
     public void create() {
         super.create();
         setTitle("Query-to-Source Settings");
-        setMessage("Define the pipeline as an ordered list of steps. Each step runs a command/skill prompt you select.");
+        setMessage("Define the pipeline as an ordered list of steps. Each step runs a command/skill prompt you select."
+                + " With no steps the Query-to-Source mode is hidden from the chat mode selector.");
         getShell().setMinimumSize(620, 480);
         getShell().setSize(620, 480);
     }

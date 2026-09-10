@@ -11,8 +11,15 @@ import org.sterl.llmpeon.querytosource.QueryToSourceConfig.QueryStep;
 class QueryToSourceConfigTest {
 
     @Test
-    void defaultsProvideExamplePipeline() {
-        var config = QueryToSourceConfig.defaults();
+    void emptyIsTheDefaultAndOffersNoPipeline() {
+        assertThat(QueryToSourceConfig.empty().steps()).isEmpty();
+        assertThat(QueryToSourceConfig.empty().hasSteps()).isFalse();
+        assertThat(QueryToSourceConfig.empty().showStepNumbers()).isFalse();
+    }
+
+    @Test
+    void examplePipelineIsTheLegacyFallback() {
+        var config = QueryToSourceConfig.examplePipeline();
         assertThat(config.steps()).hasSize(5);
         assertThat(config.steps()).extracting(QueryStep::label)
                 .containsExactly("표준 적용", "DAO 생성", "표준 검토", "Service 생성", "표준 검토");
@@ -41,14 +48,22 @@ class QueryToSourceConfigTest {
     }
 
     @Test
-    void orDefaultsIfEmpty_returnsDefaultsWhenNoSteps() {
-        assertThat(new QueryToSourceConfig(List.of()).orDefaultsIfEmpty().steps()).hasSize(5);
+    void hasSteps_isFalseForEmptyPipeline() {
+        assertThat(new QueryToSourceConfig(List.of()).hasSteps()).isFalse();
+        assertThat(QueryToSourceConfig.examplePipeline().hasSteps()).isTrue();
+        assertThat(new QueryToSourceConfig(List.of(new QueryStep("Only", StepKind.REVIEW, "r")))
+                .hasSteps()).isTrue();
     }
 
     @Test
-    void orDefaultsIfEmpty_keepsCustomPipeline() {
+    void orExampleIfEmpty_returnsExamplePipelineWhenNoSteps() {
+        assertThat(new QueryToSourceConfig(List.of()).orExampleIfEmpty().steps()).hasSize(5);
+    }
+
+    @Test
+    void orExampleIfEmpty_keepsCustomPipeline() {
         var custom = new QueryToSourceConfig(List.of(new QueryStep("Only", StepKind.REVIEW, "r")));
-        assertThat(custom.orDefaultsIfEmpty().steps()).hasSize(1);
-        assertThat(custom.orDefaultsIfEmpty().steps().get(0).label()).isEqualTo("Only");
+        assertThat(custom.orExampleIfEmpty().steps()).hasSize(1);
+        assertThat(custom.orExampleIfEmpty().steps().get(0).label()).isEqualTo("Only");
     }
 }

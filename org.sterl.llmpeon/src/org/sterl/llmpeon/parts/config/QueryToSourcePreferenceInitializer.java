@@ -22,22 +22,27 @@ public class QueryToSourcePreferenceInitializer extends AbstractPreferenceInitia
     @Override
     public void initializeDefaultPreferences() {
         IEclipsePreferences defaults = DefaultScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
-        defaults.put(PeonConstants.PREF_QUERY_TO_SOURCE_CONFIG, toJson(QueryToSourceConfig.defaults()));
+        defaults.put(PeonConstants.PREF_QUERY_TO_SOURCE_CONFIG, toJson(QueryToSourceConfig.empty()));
         defaults.putBoolean(PeonConstants.PREF_QUERY_TO_SOURCE_SHOW_STEP_NUMBERS, false);
     }
 
     public static QueryToSourceConfig load() {
         var prefs = InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
         String json = prefs.get(PeonConstants.PREF_QUERY_TO_SOURCE_CONFIG, null);
-        if (json == null || json.isBlank()) return QueryToSourceConfig.defaults();
+        // Nothing stored means nobody configured the pipeline, so the mode stays out of the UI.
+        if (json == null || json.isBlank()) return QueryToSourceConfig.empty();
         try {
-            var config = MAPPER.readValue(json, QueryToSourceConfig.class).orDefaultsIfEmpty();
-            return config;
+            var node = MAPPER.readTree(json);
+            var config = MAPPER.treeToValue(node, QueryToSourceConfig.class);
+            // A missing "steps" field means a legacy blob written before the field existed - its
+            // owner was using the wizard, so the example pipeline keeps the mode alive for them.
+            // An explicit array is the user's own choice and is kept as is, including an empty one,
+            // which switches Query-to-Source off.
+            return node.has("steps") ? config : config.orExampleIfEmpty();
         } catch (Exception e) {
-            var defaults = QueryToSourceConfig.defaults();
-            prefs.put(PeonConstants.PREF_QUERY_TO_SOURCE_CONFIG, toJson(defaults));
-            try { prefs.flush(); } catch (Exception ignored) {}
-            return defaults;
+            // Leave the unreadable blob in place so it can still be repaired by hand. The mode
+            // disappearing from the combo is the visible signal that it needs a look.
+            return QueryToSourceConfig.empty();
         }
     }
 

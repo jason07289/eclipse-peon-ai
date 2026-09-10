@@ -144,7 +144,7 @@ public class QueryToSourceModeServiceTest {
     @Test
     public void setConfig_clearsCompletedStepIndex() {
         modeService.markStepCompleted(1);
-        modeService.setConfig(QueryToSourceConfig.defaults());
+        modeService.setConfig(QueryToSourceConfig.examplePipeline());
         assertEquals(-1, modeService.getCompletedStepIndex());
     }
 
@@ -172,10 +172,15 @@ public class QueryToSourceModeServiceTest {
     }
 
     @Test
-    public void setConfig_nullFallsBackToDefaults() {
+    public void setConfig_nullLeavesNoPipeline() {
+        modeService.setConfig(QueryToSourceConfig.examplePipeline());
         modeService.setConfig(null);
-        assertEquals(5, modeService.getConfig().steps().size());
-        assertEquals("표준 적용", modeService.getConfig().steps().get(0).label());
+        assertTrue(modeService.getConfig().steps().isEmpty());
+    }
+
+    @Test
+    public void freshServiceHasNoPipeline() {
+        assertTrue(modeService.getConfig().steps().isEmpty());
     }
 
     @Test

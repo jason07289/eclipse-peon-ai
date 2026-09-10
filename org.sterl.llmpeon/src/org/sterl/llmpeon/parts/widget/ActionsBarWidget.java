@@ -30,6 +30,9 @@ public class ActionsBarWidget extends Composite {
 
     private final AtomicBoolean working = new AtomicBoolean(false);
     private boolean agentModeAvailable = false;
+    private boolean queryToSourceAvailable = true;
+    /** Modes currently listed in the combo; the selection index refers to this list. */
+    private List<PeonMode> offeredModes = List.of();
     private List<AiModel> availableModels = List.of();
 
     public ActionsBarWidget(Composite parent, int style,
@@ -110,13 +113,12 @@ public class ActionsBarWidget extends Composite {
     private void buildAgentCombo(Consumer<PeonMode> onModeChange) {
         agentCombo = new Combo(this, SWT.READ_ONLY);
         agentCombo.setLayoutData(new RowData(180, SWT.DEFAULT));
-        agentCombo.setItems(PeonMode.visibleValues().stream()
-                .map(PeonMode::getLabel)
-                .toArray(String[]::new));
-        agentCombo.select(PeonMode.visibleValues().indexOf(PeonMode.DEV)); // default: dev
+        rebuildModeItems(PeonMode.DEV); // default: dev
         agentCombo.setToolTipText("Select agent mode");
         agentCombo.addListener(SWT.Selection, e -> {
-            PeonMode selected = PeonMode.visibleValues().get(agentCombo.getSelectionIndex());
+            int idx = agentCombo.getSelectionIndex();
+            if (idx < 0 || idx >= offeredModes.size()) return;
+            PeonMode selected = offeredModes.get(idx);
             if (selected == PeonMode.AGENT && !agentModeAvailable) {
                 selectMode(PeonMode.DEV);
                 agentCombo.setToolTipText("Peon-Agent requires a project to be selected");
@@ -127,9 +129,24 @@ public class ActionsBarWidget extends Composite {
         });
 	}
 
-    /** Select the given mode in the combo, ignoring hidden modes. */
+    /**
+     * Refill the combo with the modes currently on offer and keep {@code selected} picked.
+     * A mode that is no longer offered falls back to Dev.
+     */
+    private void rebuildModeItems(PeonMode selected) {
+        offeredModes = PeonMode.visibleValues().stream()
+                .filter(m -> m != PeonMode.QUERY_TO_SOURCE || queryToSourceAvailable)
+                .toList();
+        agentCombo.setItems(offeredModes.stream()
+                .map(PeonMode::getLabel)
+                .toArray(String[]::new));
+        selectMode(selected);
+    }
+
+    /** Select the given mode in the combo, falling back to Dev when it is not on offer. */
     private void selectMode(PeonMode mode) {
-        int idx = PeonMode.visibleValues().indexOf(mode);
+        int idx = offeredModes.indexOf(mode);
+        if (idx < 0) idx = offeredModes.indexOf(PeonMode.DEV);
         if (idx >= 0) agentCombo.select(idx);
     }
 
@@ -168,6 +185,18 @@ public class ActionsBarWidget extends Composite {
             layout(true, true);
             getParent().layout(new Control[]{this});
         }
+    }
+
+    /**
+     * Show or hide Query-to-Source in the mode combo. It is hidden while no pipeline step is
+     * configured, since the wizard would have nothing to run.
+     */
+    public void setQueryToSourceAvailable(boolean available) {
+        if (this.queryToSourceAvailable == available) return;
+        this.queryToSourceAvailable = available;
+        int idx = agentCombo.getSelectionIndex();
+        PeonMode current = idx >= 0 && idx < offeredModes.size() ? offeredModes.get(idx) : PeonMode.DEV;
+        rebuildModeItems(current);
     }
 
     /** Allow or block selection of Peon-Agent mode. */

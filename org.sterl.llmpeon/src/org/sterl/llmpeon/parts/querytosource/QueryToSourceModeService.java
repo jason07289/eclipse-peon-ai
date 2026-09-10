@@ -34,7 +34,7 @@ public class QueryToSourceModeService {
 
     private final AiQueryToSourceService service;
 
-    private volatile QueryToSourceConfig config = QueryToSourceConfig.defaults();
+    private volatile QueryToSourceConfig config = QueryToSourceConfig.empty();
     private volatile QueryStep pendingStep;
     private volatile int pendingStepIndex = NONE;
     private final AtomicInteger completedStepIndex = new AtomicInteger(NONE);
@@ -53,7 +53,7 @@ public class QueryToSourceModeService {
 
     /** Replacing the pipeline invalidates any prior step indices, so progress is reset too. */
     public void setConfig(QueryToSourceConfig config) {
-        this.config = config == null ? QueryToSourceConfig.defaults() : config;
+        this.config = config == null ? QueryToSourceConfig.empty() : config;
         completedStepIndex.set(NONE);
         pendingStep = null;
         pendingStepIndex = NONE;

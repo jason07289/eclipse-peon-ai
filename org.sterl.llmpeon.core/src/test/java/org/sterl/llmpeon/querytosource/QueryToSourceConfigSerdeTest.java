@@ -75,7 +75,7 @@ class QueryToSourceConfigSerdeTest {
     void emptyStepsArrayDeserializesToEmptyPipeline() throws Exception {
         var config = MAPPER.readValue("{\"steps\":[]}", QueryToSourceConfig.class);
         assertThat(config.steps()).isEmpty();
-        assertThat(config.orDefaultsIfEmpty().steps()).hasSize(5);
+        assertThat(config.orExampleIfEmpty().steps()).hasSize(5);
     }
 
     @Test
@@ -98,11 +98,11 @@ class QueryToSourceConfigSerdeTest {
     }
 
     @Test
-    void legacyJsonOrDefaultsIfEmpty_yieldsDefaultPipeline() throws Exception {
+    void legacyJsonOrExampleIfEmpty_yieldsExamplePipeline() throws Exception {
         var legacy = """
                 {"standardPrompt":"old","generatePrompt":"gen","layers":[]}
                 """;
-        var config = MAPPER.readValue(legacy, QueryToSourceConfig.class).orDefaultsIfEmpty();
+        var config = MAPPER.readValue(legacy, QueryToSourceConfig.class).orExampleIfEmpty();
         assertThat(config.steps()).hasSize(5);
         assertThat(config.steps().get(0).kind()).isEqualTo(StepKind.TRANSFORM);
     }

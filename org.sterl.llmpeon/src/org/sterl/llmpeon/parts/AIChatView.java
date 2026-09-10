@@ -155,7 +155,12 @@ public class AIChatView implements EclipseAiMonitor {
     private record ShownSurvey(String slug, String token) {}
 
     private final IPreferenceChangeListener prefListener = event -> {
-        EclipseUtil.runInUiThread(parent, this::applyConfig);
+        EclipseUtil.runInUiThread(parent, () -> {
+            applyConfig();
+            // the Query-to-Source pipeline is edited in the preferences too, and an emptied
+            // pipeline has to take the mode out of the combo right away
+            refreshQueryToSourceAvailability();
+        });
     };
     
     private final StandingOrdersBuilder standingOrders = new StandingOrdersBuilder()
@@ -387,6 +392,7 @@ public class AIChatView implements EclipseAiMonitor {
     private void loadInitialConfig() {
         checkForUpdates();
         applyConfig();
+        refreshQueryToSourceAvailability();
         statusLine.setSkillsMenuHandler(
             () -> aiService.getSkillService().getAllLoadedSkills(),
             this::onSkillMenuSelection
@@ -935,6 +941,19 @@ public class AIChatView implements EclipseAiMonitor {
     // -------------------------------------------------------------------------
     // Query-to-Source wizard
     // -------------------------------------------------------------------------
+
+    /**
+     * Offers Query-to-Source only while its pipeline has steps, and leaves the mode if the last
+     * step was just removed.
+     */
+    private void refreshQueryToSourceAvailability() {
+        if (actionsBar == null || actionsBar.isDisposed()) return;
+        boolean available = QueryToSourcePreferenceInitializer.load().hasSteps();
+        actionsBar.setQueryToSourceAvailable(available);
+        if (!available && aiService.getPeonMode() == PeonMode.QUERY_TO_SOURCE) {
+            onModeChange(PeonMode.DEV);
+        }
+    }
 
     /** Shows the wizard step bar in QUERY_TO_SOURCE mode; chat input stays visible in all modes. */
     private void updateInputForMode() {

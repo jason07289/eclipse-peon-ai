@@ -91,9 +91,13 @@ file-edit and shell tools — the same lock plan mode uses — so the AI physica
 files no matter what the prompt says. MCP tools stay available. It is off by default on every
 step, including Review, so existing pipelines keep working exactly as before.
 
-### Default example pipeline
+### The mode is off until you configure it
 
-A fresh install ships with this example order (prompts are empty until you assign them):
+A fresh install ships with **no steps**, so `query-to-source` is **not** in the mode dropdown at
+all. Add the first step in **⚙ Query-to-Source Settings** and it appears — no restart needed.
+See [Turning the mode on and off](#turning-the-mode-on-and-off).
+
+A typical pipeline looks like this:
 
 1. 표준 적용 — Transform
 2. DAO 생성 — Generate
@@ -136,6 +140,20 @@ Press **⚙** in the wizard bar to open **Query-to-Source Settings**:
   Only the plain name is stored — the tag is display only.
 
 Settings are stored in Eclipse preferences and reused across sessions.
+
+## Turning the mode on and off
+
+The pipeline itself is the switch:
+
+- **No steps → mode hidden.** This is the default, so teams that do not use the wizard never see
+  `query-to-source` in the mode dropdown.
+- **At least one step → mode offered.** It appears as soon as you press OK in settings.
+- **Removing the last step** takes it away again, and if you are in the mode at that moment Peon
+  falls back to `dev` immediately.
+
+None of this needs an Eclipse restart. An empty pipeline is remembered as empty — it is not
+silently refilled with an example. Only configurations written before the step list existed
+(older Peon versions) fall back to the example pipeline, so upgrading users of the wizard keep it.
 
 Keep **naming conventions, package layout, SQL standards, and framework rules** inside the step
 prompts (commands/skills), not in Peon itself. The wizard UI stays the same; your team owns the

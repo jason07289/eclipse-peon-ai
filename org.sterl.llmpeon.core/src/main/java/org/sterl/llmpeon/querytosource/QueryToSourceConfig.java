@@ -70,13 +70,32 @@ public record QueryToSourceConfig(List<QueryStep> steps, boolean showStepNumbers
         this(steps, false);
     }
 
-    /** Returns {@link #defaults()} when this config has no steps (e.g. legacy JSON). */
-    public QueryToSourceConfig orDefaultsIfEmpty() {
-        return steps.isEmpty() ? defaults() : this;
+    /**
+     * Whether a pipeline is configured. An empty pipeline switches the whole
+     * {@link org.sterl.llmpeon.PeonMode#QUERY_TO_SOURCE} mode off, so it is not offered in the UI.
+     */
+    public boolean hasSteps() {
+        return !steps.isEmpty();
     }
 
-    /** Example pipeline matching a typical query → DAO → review → service → review flow. */
-    public static QueryToSourceConfig defaults() {
+    /** Returns {@link #examplePipeline()} when this config has no steps (e.g. legacy JSON). */
+    public QueryToSourceConfig orExampleIfEmpty() {
+        return steps.isEmpty() ? examplePipeline() : this;
+    }
+
+    /**
+     * No pipeline at all, which is the default: until someone configures steps there is nothing
+     * for the wizard to run, so the mode is not offered in the UI.
+     */
+    public static QueryToSourceConfig empty() {
+        return new QueryToSourceConfig(List.of(), false);
+    }
+
+    /**
+     * Example pipeline matching a typical query → DAO → review → service → review flow.
+     * Not the default - it only fills in for configs written before the step list existed.
+     */
+    public static QueryToSourceConfig examplePipeline() {
         return new QueryToSourceConfig(List.of(
                 new QueryStep("표준 적용", StepKind.TRANSFORM, ""),
                 new QueryStep("DAO 생성", StepKind.GENERATE, ""),
