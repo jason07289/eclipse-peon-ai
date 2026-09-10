@@ -1191,14 +1191,26 @@ public class AIChatView implements EclipseAiMonitor {
 
         if (StringUtil.hasValue(text)) {
             chatHistory.appendMessage(new SimpleMessage(Type.USER, text));
-            applySlashCommandIfPresent(active);
-            chatInput.clearText();
-            
-            // already working -> we only append the current history ...
+
+            // already working -> we only append to the current history and start no call. A slash
+            // command must NOT be armed here: its prompt and slug would sit on the service until
+            // some later call picks them up, and its slug would end up on the running turn's
+            // survey. Report it instead of silently swallowing the command.
             if (actionsBar.isWorking()) {
                 active.addMessage(UserMessage.from(text));
+                chatInput.clearText();
+                chatInput.dismissSlashMenu(); // clearText() alone leaves the popup on screen
+                if (text.stripLeading().startsWith("/")) {
+                    chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                            "A command cannot be started while a request is running — the text was "
+                            + "added to the running conversation instead. Wait for the reply, then "
+                            + "run the command."));
+                }
                 return;
             }
+
+            applySlashCommandIfPresent(active);
+            chatInput.clearText();
         } else if (actionsBar.isWorking()) { // no text and already working ...
             return;
         }
@@ -1209,6 +1221,7 @@ public class AIChatView implements EclipseAiMonitor {
             monitorRef.set(monitor);
             Exception ex = null;
             ChatResponse cr = null;
+            boolean failed = false;
             try {
                 active.setUserContextInformations(this.standingOrders.build());
                 cr = active.call(text.isEmpty() ? null : text, this);
@@ -1217,12 +1230,14 @@ public class AIChatView implements EclipseAiMonitor {
                     if (e.getCause() instanceof CancellationException) {
                         // yes this is fine
                     } else {
+                        failed = true;
                         throw e;
                     }
                 }
             } catch (Exception e) {
                 if (!isCanceled() || !(e instanceof CancellationException)) {
                     ex = e;
+                    failed = true;
                     LOG.warn("Failed to call LLM " + aiService.getConfig(), e);
                     onChatResponse(new SimpleMessage(Type.PROBLEM, e.getMessage()));
                 }
@@ -1234,7 +1249,7 @@ public class AIChatView implements EclipseAiMonitor {
                 monitor.done();
                 monitorRef.set(new NullProgressMonitor());
                 EclipseUtil.runInUiThread(parent, () -> lockWhileWorking(false));
-                maybeShowSurvey(canceled);
+                maybeShowSurvey(!canceled && !failed);
             }
             return PeonConstants.status("Peon AI\n" + aiService.getConfig(), ex);
         }).schedule();
@@ -1243,18 +1258,26 @@ public class AIChatView implements EclipseAiMonitor {
     /**
      * Offers the satisfaction survey after a slash command run. Only commands carrying a
      * frontmatter slug are surveyed — the slug is both the opt-in signal and the score's comment.
+     *
+     * @param runCompleted whether the run actually produced a reply. A canceled or failed run is
+     *                     never surveyed: the score would rate the outage, not the command.
      */
-    private void maybeShowSurvey(boolean canceled) {
+    private void maybeShowSurvey(boolean runCompleted) {
         var slug = pendingSurveySlug.getAndSet(null);
-        if (slug == null || canceled) return;
+        if (slug == null || !runCompleted) return;
 
         var config = SurveyPreferenceInitializer.load();
         if (!config.isUsable()) return;
         if (!SurveyPreferenceInitializer.consumeCooldown(slug, config.effectiveCooldownMinutes())) return;
 
         var shown = new ShownSurvey(slug, UUID.randomUUID().toString());
-        shownSurvey.set(shown);
-        EclipseUtil.runInUiThread(parent, () -> chatHistory.appendSurvey(shown.token()));
+        // Claiming the slot and drawing the bar have to happen in one step on the UI thread. Split
+        // across threads, a Clear landing in between drops the token while the bar still appears,
+        // leaving something on screen that silently ignores every click.
+        EclipseUtil.runInUiThread(parent, () -> {
+            shownSurvey.set(shown);
+            chatHistory.appendSurvey(shown.token());
+        });
     }
 
     /**
