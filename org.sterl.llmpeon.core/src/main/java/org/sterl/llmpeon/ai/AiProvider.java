@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.sterl.llmpeon.ai.model.AiModel;
@@ -86,7 +87,9 @@ public enum AiProvider {
                     .logRequests(c.isDebugMode())
                     .logResponses(c.isDebugMode());
 
-            if (c.isThinkingEnabled()) builder.reasoningEffort("high");
+            if (c.isThinkingEnabled()) {
+                builder.reasoningEffort(openAiReasoningEffortFor(c.getModel()));
+            }
             if (c.getMaxTokens() > 0) builder.maxCompletionTokens(c.getMaxTokens());
             return builder.build();
         }
@@ -402,6 +405,14 @@ public enum AiProvider {
     // Streaming only needs to cover time-to-first-token (connect + model warmup), not the full response duration.
     private static final Duration TIMEOUT = Duration.ofMinutes(3);
     private static final Duration MODEL_TIMEOUT = SharedHttpClient.MODEL_TIMEOUT;
+
+    /**
+     * OPEN_AI provider default: Qwen family runs with xhigh, all other models keep high.
+     */
+    static String openAiReasoningEffortFor(String model) {
+        var normalized = model == null ? "" : model.toLowerCase(Locale.ROOT);
+        return normalized.contains("qwen") ? "xhigh" : "high";
+    }
 
     // --- Public API ---
 
