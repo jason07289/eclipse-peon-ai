@@ -1,6 +1,6 @@
 # Chat Sessions — Persistence & Resume Design
 
-Status: **draft, not yet implemented** (design v2, after adversarial review 2026-10-02)
+Status: **draft, not yet implemented** (design v3, after second adversarial review 2026-10-08)
 
 Peon AI currently keeps conversations only in memory: each chat service holds a
 langchain4j `MessageWindowChatMemory` (`AbstractChatService`, no `ChatMemoryStore`),
@@ -18,16 +18,26 @@ save, list, resume, and switch conversations.
   `ToolService.executeLoop()` sends `staticMessages + memory.messages()` each
   iteration and appends AI/tool-result messages to memory *after* the
   `onChatResponse` UI callbacks. Memory is only complete once `executeLoop()`
-  returns.
-- **Compression is destructive**: `compressContext()` does `memory.clear()` and
-  replaces everything with one `[Context summary]` `AiMessage`. The
-  LLM-callable `CompactSessionTool` does the same.
+  returns. Tools run **before** their results are added to memory.
+- **Two distinct compaction paths**: `compressContext()` does `memory.clear()`
+  and replaces everything with one `[Context summary]` `AiMessage`. The
+  LLM-callable `CompactSessionTool` does NOT call `compressContext()` — it
+  replaces memory with a user message and returns the summary as a tool
+  result. Both must be treated as compaction events.
+- **Memory changes outside `call()`**: `clear()` (Clear button),
+  `startImplementation()` (PLAN→DEV handoff: clears DEV memory and seeds the
+  plan), tool-driven compaction.
 - **UI is display-only**: `ChatMarkdownWidget` (SWT Browser + chat.html);
   `AIChatView.refreshChat()` re-renders from `getActiveService().getMessages()`.
   PROBLEM/TOOL notices appended directly to the widget are lost on refresh.
 - **Mode switching has side effects**: `setPeonMode(AGENT)` resets phase and
   re-injects the project's plan overview file; entering QUERY_TO_SOURCE resets
-  (clears) its memory. `setProject()` retargets file-write/disk tools.
+  (clears) its memory. `setProject()` retargets file-write/disk tools, and is
+  called from UI selection changes (`AIChatView`) whenever the project is not
+  pinned.
+- **UI-thread hazards**: tools such as `EclipseWorkspaceWriteFileTool` call
+  back into the UI thread via `Display.syncExec()` (through `EclipseUtil`), so
+  the UI thread must never block waiting for a running turn Job.
 - **Available infra**: Jackson is bundled and used for JSON-in-preferences;
   langchain4j ships unused `ChatMessageSerializer`/`ChatMessageDeserializer`.
   No Activator, no state-location usage today.
@@ -72,165 +82,306 @@ Sessions live **outside the workspace** (requirement: nothing may remain in
 ```
 <base>/                                  # preference, default: ~/.peon-ai
   sessions/
-    <wsName>-<sha256(wsPath)[0:8]>/      # human-readable AND collision-free
+    <wsName>-<sha256(wsRealPath)[0:16]>/ # human-readable + 64-bit hash
+      store.json                         # store identity: full workspace path
       .lock                              # java.nio FileLock, instance ownership
       index.json                         # rebuildable cache, NOT authoritative
+      corrupt/                           # quarantined unreadable files
       <sessionId>/
-        meta.json                        # authoritative session metadata
-        transcript.jsonl                 # user-facing history, append-only
-        memory.json                      # model-resume snapshot, atomic replace
-        memory.json.bak                  # previous good revision
+        transcript.jsonl                 # user-facing history + WAL, append-only
+        checkpoints/
+          ckpt-000017.json               # immutable checkpoint (meta + memories)
+          ckpt-000016.json               # previous good revision (keep 2)
+        CURRENT                          # tiny pointer file: "17"
 ```
 
-- `wsName` = sanitized last segment of
-  `ResourcesPlugin.getWorkspace().getRoot().getLocation()`; the hash suffix of
-  the normalized full path removes same-name-workspace races (a check-then-
-  suffix scheme has a TOCTOU race and was rejected).
+- `wsName` = sanitized last segment of the workspace location; the hash is
+  computed over the **normalized real path** (`Path.toRealPath()`, symlinks
+  resolved). 16 hex chars (64 bits) — 8 was not collision-free.
+- **Store identity check**: `store.json` records the full normalized
+  workspace path. On open, a mismatch with the current workspace means a hash
+  collision or a copied store → the store is **refused** (never silently
+  shared), and the user is told which path owns it.
 - Windows-forbidden characters (`\ / : * ? " < > |`) sanitized to `_`.
-- `~/.peon-ai` and temp files created user-only; the same applied to custom
-  base paths.
+- `<base>` and all files created user-only; the same applied to custom paths.
 
-### 2. Transcript vs. memory snapshot (the core split)
+### 2. One checkpoint file, not meta + memory (commit protocol)
 
-Persisting the `ChatMemory` alone is wrong twice over: compression would
-destroy the saved originals, and a file-backed `ChatMemoryStore` writes on
-every `add`/`clear` with no transactional boundary (langchain4j 1.16.1:
-`add` → `updateMessages`, `clear` → `deleteMessages`; the tool loop appends
-assistant message and each tool result separately; compress is clear-then-add).
-**Do not inject a `ChatMemoryStore`.** Instead:
+v2 kept `meta.json` and `memory.json` as two separately-replaced files — a
+crash between the two writes leaves them pointing at different revisions, and
+no index rebuild can repair that. v3 therefore uses **one immutable checkpoint
+file per revision** plus a commit pointer:
 
-| File | Content | Written | On compress |
-|---|---|---|---|
-| `transcript.jsonl` | type-tagged events: USER, AI, THINK, TOOL, PROBLEM, COMPACTED, one JSON per line | streamed append during the turn | append a `COMPACTED` event; originals preserved |
-| `memory.json` | langchain4j-serialized `memory.messages()` + `revision` + turn `status` | turn boundary, temp-file + rename, previous revision kept as `.bak` | replaced (revision++) |
-| `meta.json` | see §5 | with `memory.json` | updated |
+```json
+// ckpt-000017.json — written once, never modified
+{
+  "schemaVersion": 1,
+  "messageFormatVersion": "lc4j-1.16",
+  "revision": 17,
+  "meta": { ...see §5... },
+  "aggregate": {
+    "activeMode": "DEV",
+    "devMemory":  [ ...lc4j-serialized messages... ],
+    "planMemory": [ ...lc4j-serialized messages... ]
+  },
+  "lastTranscriptSeq": 412,
+  "checksum": "sha256 of the canonical payload"
+}
+```
 
-- UI restore renders from `transcript.jsonl`; LLM resume loads `memory.json`
-  verbatim into a fresh in-memory `MessageWindowChatMemory` (KV-cache safe).
-- Side benefit: PROBLEM/TOOL notices land in the transcript and survive
-  `refreshChat()`, fixing today's notice loss.
-- A lost transcript append is cosmetic; `memory.json` is the recovery point.
+**Commit protocol** (all steps on the session's writer, §6):
 
-### 3. Save points (never `onChatResponse`)
+1. Write `ckpt-<rev>.json` to a temp file, fsync, rename into `checkpoints/`.
+2. Replace `CURRENT` via temp-file + rename with the new revision number.
+3. Delete checkpoints older than the previous one (keep 2).
 
-`onChatResponse` fires mid-tool-loop and *before* memory is updated — it is
-not a valid save hook. Snapshots are taken in the service layer where memory
-is complete and on the executing thread:
+**Recovery** (on open): read `CURRENT` → load that checkpoint → verify
+checksum and parse. On failure, fall back to the previous checkpoint; move
+unreadable files to `corrupt/` (never delete). A truncated last line in
+`transcript.jsonl` (torn append) is dropped by a tolerant line parser.
+`index.json` is rebuilt from checkpoint headers whenever missing or stale —
+losing it can never lose a session.
+
+### 3. Transcript as event log AND write-ahead log
+
+`transcript.jsonl` is an append-only, type-tagged event stream serving two
+purposes: rendering the user-visible history, and detecting interrupted turns
+after a hard kill (a crash runs no exception handler, so turn state must be
+durable *before* side effects, not after).
+
+Event envelope: `{ "seq": n, "turnId": "...", "mode": "DEV", "ts": ...,
+"type": ..., ...payload }`. Event types:
+
+| Type | Written | Purpose |
+|---|---|---|
+| `TURN_STARTED` | flushed before the first model call | crash detection |
+| `USER`, `AI`, `THINK` | streamed during the turn | UI history |
+| `TOOL_INTENT` | **flushed before each tool executes** (tool-call id, name, args digest) | side-effect audit |
+| `TOOL_RESULT` | after the tool returns | side-effect audit |
+| `PROBLEM` | as emitted | UI history (survives refresh) |
+| `COMPACTED` | on **both** compaction paths — `compressContext()` and `CompactSessionTool` | originals preserved |
+| `TURN_COMMITTED` | after the checkpoint commit, with the revision | confirmation marker |
+
+- **Interrupted-turn detection**: on open, a `TURN_STARTED` without a matching
+  `TURN_COMMITTED` (or with `seq > lastTranscriptSeq` of `CURRENT`'s
+  checkpoint) marks the session **interrupted**, listing which tools have a
+  `TOOL_INTENT` without / with a `TOOL_RESULT`. External side effects whose
+  outcome is unknown are shown to the user; nothing auto-reruns.
+- Because the WAL role makes the transcript load-bearing, `TURN_STARTED` and
+  `TOOL_INTENT` appends are flushed to disk before proceeding; other events
+  may be buffered.
+- Events after the checkpoint's `lastTranscriptSeq` are rendered as
+  "unconfirmed" in the UI (present in history, absent from the resumable
+  model memory).
+- LLM resume loads the checkpoint's memory lists verbatim into fresh
+  in-memory `MessageWindowChatMemory` instances (KV-cache safe).
+
+### 4. Checkpoint commit points
+
+Snapshots are taken in the service layer where memory is complete and on the
+executing thread — never from `onChatResponse` (it fires mid-tool-loop,
+before memory is updated):
 
 - **End of `AbstractChatService.call()`**, right after `executeLoop()`
-  returns: snapshot `memory.messages()` (immutable copy) with
-  `status: completed`.
-- **On cancel** (`monitor.isCanceled()`): snapshot with `status: canceled`.
-- **On exception**: snapshot with `status: interrupted` — a turn whose tools
-  already ran must not be silently dropped.
-- **After `compressContext()`**: commit the clear+add pair as ONE new
-  revision; a crash between the two in-memory steps never reaches disk, the
-  previous revision file survives.
-- Restore of a session whose last `status != completed` shows an
-  "interrupted" banner; tool outcomes are treated as unknown and nothing
-  auto-reruns.
+  returns: commit with `status: completed`.
+- **On cancel** (`monitor.isCanceled()`): commit with `status: canceled`.
+- **On exception**: commit with `status: interrupted`.
+- **Hard kill**: no commit happens — detected via the WAL (§3).
+- **Every memory mutation outside `call()` also commits a revision**:
+  `clear()`, `compressContext()`, `CompactSessionTool`, and
+  `startImplementation()` (PLAN→DEV handoff). The clear+add pair inside a
+  compaction reaches disk only as one completed revision.
 
-### 4. Session unit (aggregate) — phased
+### 5. Session unit (aggregate) — phased
 
-- **Phase 1: a session covers the DEV and PLAN conversations only.** AGENT
-  and QUERY_TO_SOURCE memories are out of scope (switching sessions while in
-  those modes just informs the user). This ships the common case safely.
+A Phase 1 session is the pair `{devMemory, planMemory}` plus `activeMode`,
+stored together in every checkpoint (§2) — restoring only the active mode's
+memory would lose the other conversation or leak a previous session's state
+into reused service instances. Transcript events carry `mode` so the UI can
+filter per mode.
+
+- **Phase 1 scope**: DEV + PLAN. AGENT and QUERY_TO_SOURCE memories are out
+  of scope (switching sessions while in those modes just informs the user).
 - **Phase 2: AGENT as an aggregate**
   `{plannerMemory, developerMemory, phase, retryCount,
   implementationRequested, plan-overview file (project-relative path)}`;
   QUERY_TO_SOURCE adds `{pipeline version, current step, per-step completion}`.
 - **Restore is a dedicated path, not `setPeonMode()`**: `restoreSession()`
-  injects state with no reset, no overview re-injection, no auto-run. Mode
-  switching logic is never reused for restore.
+  replaces both memories and the active mode atomically, with no reset, no
+  overview re-injection, no auto-run. Mode switching logic is never reused
+  for restore.
 
-### 5. Metadata (`meta.json`)
+Checkpoint `meta`:
 
 ```json
 {
-  "schemaVersion": 1,
-  "lc4jVersion": "1.16.1",
   "id": "<uuid>",
   "title": "first user message, 60 chars",
-  "mode": "DEV",
   "status": "completed | canceled | interrupted",
-  "revision": 17,
   "createdAt": "...", "updatedAt": "...",
-  "workspacePath": "/abs/path/to/workspace",
+  "workspacePath": "/abs/normalized/path",
   "project": { "name": "...", "location": "/abs/path" },
   "planOverviewFile": "relative/path (AGENT, phase 2)",
   "tokens": { "context": 45000 }
 }
 ```
 
-- **Project binding is mandatory** (not just workspace): `setProject()`
-  retargets edit/disk tools, so restoring project A's conversation while
-  project B is selected would aim A's plan at B. On restore the project's
-  existence and location are verified; on mismatch the session opens
-  **read-only** with a banner, and tools are enabled only after an explicit
-  re-bind by the user.
-- Loader behavior for unknown `schemaVersion`: keep the file, never delete,
-  list it as "incompatible".
+### 6. Concurrency: per-session writer + generation
 
-### 6. Concurrency
+Generation checks alone do not serialize two same-generation saves, and the
+send Job is not the only writer (the compress action runs its own Job).
+Therefore:
 
-- `PeonAiService` gains `currentSessionId` + an `AtomicLong generation`. A
-  send `Job` captures `(service, sessionId, generation)` at start; every UI
-  callback and every save compares the captured generation with the current
-  one and drops stale work.
-- Switching/creating sessions while a Job runs: request cancel, await
-  termination (or keep the switch disabled), then `generation++`.
-- `AIChatView.dispose()` awaits the running Job before the final snapshot,
-  using the same serialization boundary.
+- **Every session mutation goes through a single-threaded per-session
+  executor** ("the writer"): turn commits, compaction, clear, restore,
+  delete, retention affecting that session. The writer owns the
+  check-revision → snapshot → commit sequence, making it one exclusive
+  critical section.
+- `PeonAiService` keeps `currentSessionId` + an `AtomicLong generation`. A
+  send Job captures `(service, sessionId, generation)` at start. Generation
+  is validated **both when enqueuing to the writer and again when the queued
+  work executes**; stale work is dropped. UI callbacks drop stale renders the
+  same way.
+- Switching/creating sessions: request cancel of the running Job, `generation++`,
+  enqueue the switch on the writer (it runs after in-flight commits drain).
+- **Shutdown must never block the UI thread**: running turns use
+  `Display.syncExec()` (e.g. editor saves in write tools), so a blocking wait
+  in `dispose()` deadlocks. `dispose()` only signals cancel and flushes the
+  transcript buffer. No final "parting" snapshot is needed: every turn and
+  every mutation already committed at its boundary, and an in-flight turn is
+  recovered as interrupted via the WAL on next start.
 - Cross-process: the per-workspace `.lock` (FileLock) is acquired on first
-  use; if unavailable the store is opened read-only. Retention deletes only
-  run while holding the lock.
-- Write conflict guard: if the on-disk `revision` is newer than the
-  in-memory one, do not overwrite — write a `*.conflict-<ts>.json` copy.
-- `index.json` is a cache rebuilt from `meta.json` scans whenever missing or
-  stale; losing it can never lose a session.
+  use; if unavailable the store opens read-only. Retention deletes only run
+  while holding the lock.
+- Write conflict guard (second process, shared custom path): if the on-disk
+  `CURRENT` revision is newer than the writer's base revision, do not
+  overwrite — write a `*.conflict-<ts>.json` copy and surface it.
 
-### 7. Lifecycle, retention, preferences
+### 7. Project binding — enforced per tool execution, not just at restore
+
+`setProject()` retargets edit/disk tools and is invoked by ordinary UI
+selection changes, so validating the project only at restore time is not
+enough: restoring project A's session and then clicking project B would aim
+A's conversation at B.
+
+- The session aggregate carries the **project binding** (§5 meta), distinct
+  from the transient UI selection.
+- A send Job captures the binding at turn start; **tool execution validates
+  the captured binding** against the tools' current target and refuses to run
+  on mismatch.
+- UI selection changes do not silently mutate a session's binding.
+  **Re-binding is an explicit user action**, executed on the session writer
+  (serialized with running work, §6).
+- On restore, the bound project's existence and location are verified; on
+  mismatch the session opens **read-only** with a banner until the user
+  re-binds.
+
+### 8. Versioning & migration
+
+- `schemaVersion` (this store format) and `messageFormatVersion` (the
+  langchain4j serialization) are **separate** fields; a langchain4j upgrade
+  can change the message format without a store-schema change.
+- The loader keeps a table of supported combinations. Older supported
+  versions are converted forward losslessly on load (written back only on the
+  next regular commit). Unknown/unsupported files are kept untouched and
+  listed as "incompatible" — never deleted, never overwritten.
+- Test fixtures: real serialized message samples (user, AI with tool calls,
+  tool results, multi-content, compaction summary) per supported version;
+  round-trip and forward-read tests run in `org.sterl.llmpeon.core` unit
+  tests.
+
+### 9. Lifecycle, retention, preferences
 
 - Titles: first user message truncated to 60 chars; optional LLM-generated
   titles later (Continue-style, off by default).
-- Retention: by `meta.json.updatedAt`, defaults 30 days / max N sessions,
-  both preferences.
+- Retention (all preferences): maxAge default 30 days, maxCount default 50,
+  **minRetention 1 day** (nothing younger is ever auto-deleted). The
+  currently-open session and sessions in `interrupted` status are protected.
+  Opening a session touches `updatedAt` before any cleanup can see it.
+  Cleanup runs at store-open under the lock; backups, conflict copies and
+  quarantined files count toward size.
+- **Size limits**: a per-session transcript cap (default 50 MB → warn, stop
+  appending transcript detail but keep checkpoints working) and a total store
+  cap (default 1 GB → oldest unprotected sessions evicted first). A single
+  long-lived session must not grow unbounded just because it stays "fresh".
+- **Disk-full / write failure**: the last good checkpoint is never touched by
+  a failing commit (immutable files + pointer switch); the failure is
+  surfaced in the status line and persistence pauses until a write succeeds.
 - "Disable persistence" preference: stops new writes only; existing data is
   kept; a separate explicit "delete all sessions" action.
+- **Base-path change** is two distinct operations:
+  1. *Open a different store* (default): release the old lock, lock and open
+     the new path; old data stays where it is and reappears when the path is
+     set back.
+  2. *Migrate*: offered via dialog on path change; runs only when no turn is
+     executing; copy → verify (checksums) → switch pointer/preference →
+     delete source. On any failure the source is kept and the preference is
+     not switched.
+  The path preference lives in `ConfigurationScope` (per installation, shared
+  across workspaces); invalid/unwritable paths are rejected in the preference
+  page validator.
 - Prerequisite fix: `ToSimpleMessage` uses `UserMessage.singleText()`, which
   throws on the multi-content messages `call()` builds when context info is
   attached — must handle multi-content before transcript/restore rendering.
 
-### 8. Implementation order
+### 10. Implementation order
 
-1. `SessionStore` in core (file IO, lock, revision, schema) — unit-testable
-   without UI.
-2. Turn-boundary snapshot hook in `AbstractChatService` (end of `call()`,
-   after `compressContext()`) + transcript appends.
-3. `PeonAiService`: sessionId/generation, switch & `restoreSession()` paths
-   (DEV/PLAN only).
+1. `SessionStore` in core: checkpoint commit protocol, WAL transcript,
+   recovery, lock, store identity, schema — unit-testable without UI
+   (crash-injection tests between every write step).
+2. Turn-boundary commit hooks in `AbstractChatService` (end of `call()`,
+   cancel, exception) + all out-of-call mutation hooks (clear, both
+   compaction paths, `startImplementation`).
+3. `PeonAiService`: per-session writer, sessionId/generation,
+   switch & `restoreSession()` (DEV/PLAN aggregate), project-binding capture
+   & per-tool validation.
 4. UI: session list dialog (list, resume, delete, new session); render
-   restore from transcript.
-5. Retention + preference page (base path, disable toggle).
+   restore from transcript incl. "unconfirmed" markers; interrupted-session
+   banner.
+5. Retention/size caps + preference page (base path with open-vs-migrate,
+   disable toggle).
 6. Phase 2: AGENT / QUERY_TO_SOURCE aggregates.
 
-### Verification scenarios (from adversarial review)
+### Verification scenarios
 
-- Two Eclipse instances creating the same workspace store concurrently.
-- Concurrent saves to one session (stale generation must lose).
-- Kill during compression → previous revision restores.
-- Crash after tool side effects → `interrupted` checkpoint, no auto-rerun.
+- Two Eclipse instances creating the same workspace store concurrently; a
+  copied store opened from a different workspace (identity refusal).
+- Kill between each pair of commit-protocol steps (checkpoint write, CURRENT
+  switch, transcript append) → previous revision restores, torn JSONL line
+  dropped.
+- Hard kill right after a file-modifying tool ran → session flagged
+  interrupted with that tool listed as intent-without-result; no auto-rerun.
+- Concurrent send + compress on one session → serialized by the writer;
+  stale generation dropped at execution time.
+- Kill during compression (either path) → previous revision intact; both
+  paths emit `COMPACTED` when they succeed.
 - Switching sessions while a turn is running → no cross-session bleed.
-- Restoring with a different project selected → read-only + re-bind.
+- Restoring with a different project selected → read-only + explicit re-bind;
+  selecting another project mid-session does not retarget tools.
+- Shutdown while a tool is inside `Display.syncExec()` → no deadlock; next
+  start recovers the turn as interrupted.
+- Retention run while an old session is being opened → protected; disk-full
+  during commit → last good checkpoint intact, failure surfaced.
 
 ---
 
 ## Review history
 
 - v1 (state location, `ChatMemoryStore` injection, save on `onChatResponse`,
-  name-only directories) was rejected by an adversarial review (Codex,
-  2026-10-02) with 7 high findings: wrong save point, no transactional
-  boundary in `ChatMemoryStore`, incomplete aggregate (5 memories + mode side
-  effects), stale-callback contamination, missing project binding, storage
-  ownership races, and compression destroying saved originals. v2 above
-  addresses each.
+  name-only directories) — rejected by adversarial review (Codex,
+  2026-10-02), 7 high findings: wrong save point, no transactional boundary
+  in `ChatMemoryStore`, incomplete aggregate, stale-callback contamination,
+  missing project binding, storage ownership races, compression destroying
+  saved originals.
+- v2 — second review (Codex rescue, 2026-10-08), 11 findings, led to v3:
+  crash-safe interrupted detection via WAL transcript (was: exception-hook
+  only), single checkpoint file + `CURRENT` pointer (was: separate
+  meta/memory files), explicit `{dev, plan, activeMode}` aggregate in every
+  checkpoint, project binding enforced per tool execution (was: restore-time
+  only), non-blocking shutdown (was: dispose joins the Job — deadlock via
+  `Display.syncExec`), per-session writer serializing all mutations, both
+  compaction paths emitting `COMPACTED` (CompactSessionTool does not call
+  `compressContext()`), split schema/message-format versioning with
+  fixtures, size caps + active-session protection in retention, open-vs-
+  migrate semantics for base-path changes, 16-char hash + store identity
+  verification.
