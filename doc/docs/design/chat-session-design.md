@@ -1,6 +1,6 @@
 # Chat Sessions — Persistence & Resume Design
 
-Status: **draft, not yet implemented** (design v3, after second adversarial review 2026-10-08)
+Status: **draft, not yet implemented** (design v3, lifecycle and history UI updated 2026-10-13)
 
 Peon AI currently keeps conversations only in memory: each chat service holds a
 langchain4j `MessageWindowChatMemory` (`AbstractChatService`, no `ChatMemoryStore`),
@@ -292,11 +292,40 @@ A's conversation at B.
 
 ### 9. Lifecycle, retention, preferences
 
+- **Start fresh on reopen**: launching Eclipse or closing and reopening the
+  Peon AI view starts a new, empty session. Previously saved sessions are
+  never automatically resumed, including after a crash. Merely focusing,
+  hiding, or revealing an existing view does not start a new session.
+- **Resume is explicit**: users select a saved session from History
+  (§9.1) and choose Resume. Store recovery may repair or classify saved
+  sessions at startup, but does not activate them in the chat view.
+- **New Session preserves history**: the New Session action starts a separate empty
+  DEV/PLAN aggregate using the session-switch protocol (§6); it does not clear
+  or delete the previous session. Users need not press Clear on startup or
+  before starting another conversation. Closing the view follows the same
+  non-blocking cancel and stale-callback protection as shutdown (§6).
+- **Do not persist empty sessions**: opening the view or pressing New Session
+  creates only an in-memory session. On the first submitted user message,
+  materialize its initial checkpoint and index entry, then durably append
+  `TURN_STARTED` before calling the model (§3). Until then, no session
+  directory or history entry is created; clearing an untouched empty session
+  also creates no persisted revision. Normal mutation commits apply once the
+  session has been persisted. A first turn that is canceled or interrupted
+  remains discoverable in history.
+- **Clear keeps the session**: on a persisted session, Clear commits an
+  empty-memory revision and appends a `CLEARED` transcript event — the
+  history entry, title, and full transcript remain; only the model context is
+  dropped (same as today's behavior, now recorded). Clear never deletes a
+  session; deletion happens only through History. On an unpersisted empty
+  session Clear is a no-op on disk (§ lazy persistence above).
 - Titles: first user message truncated to 60 chars; optional LLM-generated
   titles later (Continue-style, off by default).
 - Retention (all preferences): maxAge default 30 days, maxCount default 50,
   **minRetention 1 day** (nothing younger is ever auto-deleted). The
-  currently-open session and sessions in `interrupted` status are protected.
+  currently-open session is always protected. Sessions in `interrupted`
+  status are protected from maxCount/size eviction but still expire by
+  maxAge — since resume is explicit, an interrupted session may never be
+  revisited, and unlimited protection would make crash leftovers immortal.
   Opening a session touches `updatedAt` before any cleanup can see it.
   Cleanup runs at store-open under the lock; backups, conflict copies and
   quarantined files count toward size.
@@ -324,6 +353,31 @@ A's conversation at B.
   throws on the multi-content messages `call()` builds when context info is
   attached — must handle multi-content before transcript/restore rendering.
 
+### 9.1. Session history UI
+
+- Place **New Session (+)** and **History** actions at the top of the chat
+  view. Give the icon actions tooltips explaining that New Session preserves
+  saved conversations and History lets users resume them.
+- History opens a session-list dialog for the current workspace store,
+  ordered by `updatedAt` descending (most recently used first).
+- Each row shows the **title, bound project, and last-used time**, with a
+  distinct indicator for interrupted sessions. Sessions without a project
+  binding show "—" in the project column. Incompatible sessions remain
+  listed with their status (§8).
+- Selecting a row does not restore it immediately. **Resume** explicitly
+  activates the selected compatible session through `restoreSession()`;
+  **Delete** removes the selected session through its writer, after a
+  confirmation. Deleting the currently active session first switches the view
+  to a fresh empty in-memory session (via the switch protocol, §6), then
+  deletes. The dialog also offers **New Session**. Browsing or dismissing
+  history leaves the current conversation unchanged.
+- After resume, render the transcript, including unconfirmed records and an
+  interrupted-session banner where applicable. Project binding validation
+  and read-only handling remain as specified in §7. No model call or tool
+  execution starts merely because a session was resumed.
+- Empty history displays a short explanation that conversations appear after
+  the first message is sent. This UI initially covers DEV/PLAN only (§5).
+
 ### 10. Implementation order
 
 1. `SessionStore` in core: checkpoint commit protocol, WAL transcript,
@@ -334,16 +388,36 @@ A's conversation at B.
    compaction paths, `startImplementation`).
 3. `PeonAiService`: per-session writer, sessionId/generation,
    switch & `restoreSession()` (DEV/PLAN aggregate), project-binding capture
-   & per-tool validation.
-4. UI: session list dialog (list, resume, delete, new session); render
-   restore from transcript incl. "unconfirmed" markers; interrupted-session
-   banner.
+   & per-tool validation; fresh sessions on startup/view reopen and lazy
+   persistence on first submission.
+4. UI: top-level New Session / History actions and session-list dialog
+   (§9.1); explicit resume, delete, and new session; render restore from
+   transcript incl. "unconfirmed" markers; interrupted-session banner.
 5. Retention/size caps + preference page (base path with open-vs-migrate,
    disable toggle).
 6. Phase 2: AGENT / QUERY_TO_SOURCE aggregates.
 
 ### Verification scenarios
 
+- Restart Eclipse or close and reopen the Peon AI view after a conversation
+  → empty new session; the previous conversation remains available through
+  History. Focusing or revealing the existing view preserves its session.
+- Open the view or press New Session repeatedly without sending a message
+  → no empty session directories or history rows. Submit the first message
+  → a persisted session exists before the model call, even if the turn fails.
+- Browse or dismiss History → no active-session change. Explicitly
+  resume a row → its DEV/PLAN state and transcript return without an AI call;
+  title, project, last-used ordering, and interrupted indicators are correct.
+- Press New Session, Resume (another session), or close/reopen the view while
+  a turn is running → cancel is requested without blocking the UI; late
+  callbacks cannot populate the new/resumed session, and the old session's
+  saved history remains available.
+- Clear a persisted session → history row and transcript survive; resume
+  shows the full transcript with a cleared-context marker and empty model
+  memory. Delete the active session from History → view switches to a fresh
+  empty session, files are removed.
+- Interrupted sessions older than maxAge are cleaned up; fresher ones survive
+  maxCount/size eviction.
 - Two Eclipse instances creating the same workspace store concurrently; a
   copied store opened from a different workspace (identity refusal).
 - Kill between each pair of commit-protocol steps (checkpoint write, CURRENT
@@ -367,6 +441,19 @@ A's conversation at B.
 
 ## Review history
 
+- 2026-10-13 — user-approved lifecycle and UI decisions: always start fresh
+  after Eclipse restart or Peon AI view reopen; resume only from history;
+  top-level New Session / History actions; recent-first session rows with
+  title, project, last-used time, and interrupted status; persist new sessions
+  only on the first submitted message.
+- 2026-10-13 (follow-up review) — closed four gaps in the lifecycle update:
+  interrupted sessions now expire by maxAge (protection limited to
+  maxCount/size eviction, preventing immortal crash leftovers); Clear
+  redefined as context-drop that keeps the session, transcript, and history
+  row (`CLEARED` event); deleting the active session from History switches to
+  a fresh session first; resume-while-running and no-binding display ("—")
+  specified. Confirmed intent: restart never loses conversations — a fresh
+  in-memory session is shown, previous ones resume from History.
 - v1 (state location, `ChatMemoryStore` injection, save on `onChatResponse`,
   name-only directories) — rejected by adversarial review (Codex,
   2026-10-02), 7 high findings: wrong save point, no transactional boundary
