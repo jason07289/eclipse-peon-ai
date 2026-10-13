@@ -29,6 +29,8 @@ public class CompactSessionTool extends AbstractTool {
         if (aiMsg != null && aiMsg.text() != null && aiMsg.text().length() > 5) {
             request.getMemory().clear();
             request.getMemory().add(UserMessage.from("Session compacted. Resume the task using the preserved context."));
+            // this compaction path never goes through compressContext() — it must emit its own event
+            request.getTurnRecorder().compacted(request.getTurnId(), aiMsg.text());
         }
         var summaryText = (aiMsg != null && aiMsg.text() != null) ? aiMsg.text() : "";
         return summaryText + (StringUtil.hasValue(preserve) 

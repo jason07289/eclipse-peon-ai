@@ -119,6 +119,9 @@ public class ToolService {
             var isToolrequest = response.aiMessage().hasToolExecutionRequests();
             var hasResponseMessage = StringUtil.hasValue(response.aiMessage().text());
             var hasThink = StringUtil.hasValue(response.aiMessage().thinking());
+
+            if (hasThink) req.getTurnRecorder().think(req.getTurnId(), response.aiMessage().thinking());
+            if (hasResponseMessage) req.getTurnRecorder().aiMessage(req.getTurnId(), response.aiMessage().text());
             
             shouldLoop = isToolrequest || (hasThink && !hasResponseMessage);
             if (shouldLoop) req.onLoop.accept(response);
@@ -141,6 +144,7 @@ public class ToolService {
                 ++stuck;
                 req.getMemory().add(response.aiMessage());
                 req.monitor.onProblem("AI hangs - only thinking returned times: " + stuck);
+                req.getTurnRecorder().problem(req.getTurnId(), "AI hangs - only thinking returned times: " + stuck);
                 if (stuck > MAX_STUCK_ITERATIONS) break;
 
                 if (stuck > MAX_STUCK_ITERATIONS / 2) addCompactHintIfNeeded(req, response, true);
@@ -169,14 +173,22 @@ public class ToolService {
         var toolResults = new ArrayList<ToolExecutionResultMessage>();
 
         for (var tr : response.aiMessage().toolExecutionRequests()) {
+            // some providers omit the call id — generate one so intent and result stay correlated
+            var callId = StringUtil.hasValue(tr.id()) ? tr.id() : java.util.UUID.randomUUID().toString();
+            // WAL: the intent must be durable BEFORE the tool may cause side effects
+            req.getTurnRecorder().toolIntent(req.getTurnId(), callId, tr.name(), tr.arguments());
             try {
                 var trResult = execute(tr, req);
                 toolResults.add(trResult);
+                req.getTurnRecorder().toolResult(req.getTurnId(), callId, tr.name(), trResult.text());
             } catch (Exception e) {
                 log.error("Tool {} with args {} failed", tr.name(), tr.arguments(), e);
                 req.getMonitor().onProblem(tr.name() + " failed: " + e.getMessage() + " details logged.");
-                toolResults.add(ToolExecutionResultMessage.from(tr.id(), tr.name(),
-                        "Tool failed - check why and inform user " + StringUtil.getStackTrace(e)));
+                req.getTurnRecorder().problem(req.getTurnId(), tr.name() + " failed: " + e.getMessage());
+                var failure = ToolExecutionResultMessage.from(tr.id(), tr.name(),
+                        "Tool failed - check why and inform user " + StringUtil.getStackTrace(e));
+                toolResults.add(failure);
+                req.getTurnRecorder().toolResult(req.getTurnId(), callId, tr.name(), failure.text());
             }
         }
 

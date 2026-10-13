@@ -6,6 +6,7 @@ import java.util.function.Predicate;
 
 import org.jspecify.annotations.Nullable;
 import org.sterl.llmpeon.ai.ConfiguredModel;
+import org.sterl.llmpeon.session.TurnRecorder;
 import org.sterl.llmpeon.shared.AiMonitor;
 import org.sterl.llmpeon.shared.ChatMessageUtil;
 import org.sterl.llmpeon.streaming.StreamingBridge;
@@ -59,6 +60,14 @@ public class ToolLoopRequest {
     public Double temperature;
     @Default
     public Consumer<ChatResponse> onLoop = r -> {};
+    /** Session transcript hooks; NO_OP unless a session is active (chat-session design §3). */
+    @Default
+    @Getter
+    public TurnRecorder turnRecorder = TurnRecorder.NO_OP;
+    /** Correlates transcript events of one turn; null outside a recorded turn. */
+    @Nullable
+    @Getter
+    public String turnId;
 
     public void addMessage(ChatMessage message) {
         ChatMessageUtil.addMessageToMemory(memory, message);

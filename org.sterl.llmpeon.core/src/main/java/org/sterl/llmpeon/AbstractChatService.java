@@ -8,6 +8,8 @@ import java.util.function.Predicate;
 
 import org.sterl.llmpeon.agent.AiCompressorAgent;
 import org.sterl.llmpeon.ai.ConfiguredModel;
+import org.sterl.llmpeon.session.SessionStatus;
+import org.sterl.llmpeon.session.TurnRecorder;
 import org.sterl.llmpeon.shared.AiMonitor;
 import org.sterl.llmpeon.shared.ChatMessageUtil;
 import org.sterl.llmpeon.shared.StringUtil;
@@ -65,6 +67,13 @@ public abstract class AbstractChatService {
      * edit tools and clears the flag. Used by Query-to-Source steps configured as read-only.
      */
     private volatile boolean oneShotReadOnly;
+
+    /**
+     * Session transcript/checkpoint hooks (chat-session design §3/§4). NO_OP by default — set by
+     * the session manager when a session is active. Hooks fire on the executing thread at the
+     * points where memory is complete.
+     */
+    private volatile TurnRecorder turnRecorder = TurnRecorder.NO_OP;
 
     protected AbstractChatService(ConfiguredModel configuredModel, ToolService toolService) {
         this.toolService = toolService;
@@ -145,6 +154,10 @@ public abstract class AbstractChatService {
             configuredModel.updateConfig(tempConfig);
         }
 
+        // WAL: durable before the first model call; the recorder also logs the USER message
+        var turnId = java.util.UUID.randomUUID().toString();
+        turnRecorder.turnStarted(turnId, message);
+
         try {
             var start = Instant.now();
             var staticMessages = buildStaticMessages(monitor);
@@ -158,12 +171,21 @@ public abstract class AbstractChatService {
                         .includeMcpTools(includesMcpTools())
                         .temperature(getTemperature())
                         .onLoop(this::updateTokenCount)
+                        .turnRecorder(turnRecorder)
+                        .turnId(turnId)
                         .build()
                     );
 
             updateTokenCount(response);
             monitor.onCallCompleted(response, Duration.between(start, Instant.now()));
+            // commit point: executeLoop returned, memory is complete for this turn
+            turnRecorder.turnFinished(turnId,
+                    monitor.isCanceled() ? SessionStatus.CANCELED : SessionStatus.COMPLETED);
             return response;
+        } catch (RuntimeException | Error e) {
+            // tools may already have run — checkpoint the turn instead of silently dropping it
+            turnRecorder.turnFinished(turnId, SessionStatus.INTERRUPTED);
+            throw e;
         } finally {
             if (slug != null) {
                 configuredModel.updateConfig(originalConfig);
@@ -178,6 +200,8 @@ public abstract class AbstractChatService {
         memory.clear();
         memory.add(AiMessage.from("[Context summary]\n" + response.aiMessage().text()));
         updateTokenCount(response);
+        // commit point: the clear+add pair reaches disk only as one completed revision
+        turnRecorder.compacted(null, response.aiMessage().text());
         return response;
     }
 
@@ -202,6 +226,17 @@ public abstract class AbstractChatService {
     public void clear() {
         memory.clear();
         contextTokenSize = 0;
+        // commit point: Clear drops the model context but keeps the session (design §9)
+        turnRecorder.cleared();
+    }
+
+    /** Session hooks; pass {@link TurnRecorder#NO_OP} to detach. Never null. */
+    public void setTurnRecorder(TurnRecorder turnRecorder) {
+        this.turnRecorder = turnRecorder == null ? TurnRecorder.NO_OP : turnRecorder;
+    }
+
+    public TurnRecorder getTurnRecorder() {
+        return turnRecorder;
     }
 
     /**
