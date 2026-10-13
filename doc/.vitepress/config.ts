@@ -63,7 +63,8 @@ export default defineConfig({
           items: [
             { text: 'Interaction UI', link: '/design/interaction-design' },
             { text: 'Plan/Dev/Agent Design (WIP)', link: '/design/plan-dev-agent-design' },
-            { text: 'Chat Sessions (Draft)', link: '/design/chat-session-design' }
+            { text: 'Chat Sessions (Draft)', link: '/design/chat-session-design' },
+            { text: 'Session Tabs (Draft)', link: '/design/session-tabs-design' }
           ]
         }
       ]
