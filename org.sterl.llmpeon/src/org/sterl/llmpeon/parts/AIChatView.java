@@ -522,7 +522,9 @@ public class AIChatView implements EclipseAiMonitor {
 
     /** Renders the saved transcript, marking uncommitted records and an interrupted session. */
     private void renderSessionTranscript(SessionDirectory.LoadedSession loaded) {
-        chatHistory.clear();
+        // clearMessages(), NOT clear(): clear() reloads the whole page asynchronously and every
+        // appendMessage sent before the reload finishes is silently dropped
+        chatHistory.clearMessages();
         var lastCommitted = loaded.checkpoint().lastTranscriptSeq();
         var manager = aiService.getSessionManager();
         boolean unconfirmedMarkerShown = false;
