@@ -71,6 +71,7 @@ import org.sterl.llmpeon.parts.widget.ChatMarkdownWidget;
 import org.sterl.llmpeon.parts.widget.FileChangeReviewWidget;
 import org.sterl.llmpeon.parts.widget.FileChangeReviewWidget.FileChange;
 import org.sterl.llmpeon.parts.widget.QueryToSourceBarWidget;
+import org.sterl.llmpeon.parts.widget.SessionHistoryDialog;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget;
 import org.sterl.llmpeon.parts.widget.StatusLineWidget.SkillMenuSelection;
 import org.sterl.llmpeon.parts.widget.UserInputWidget;
@@ -81,6 +82,8 @@ import org.sterl.llmpeon.shared.OnPartialAiResponse;
 import org.sterl.llmpeon.shared.FileUtils;
 import org.sterl.llmpeon.shared.StringUtil;
 import org.sterl.llmpeon.parts.config.SurveyPreferenceInitializer;
+import org.sterl.llmpeon.session.SessionDirectory;
+import org.sterl.llmpeon.session.TranscriptEvent;
 import org.sterl.llmpeon.shared.model.SimplePromptFile;
 import org.sterl.llmpeon.survey.SurveyService;
 import org.sterl.llmpeon.tool.model.SimpleMessage;
@@ -118,6 +121,14 @@ public class AIChatView implements EclipseAiMonitor {
 
     private final AtomicReference<IProgressMonitor> monitorRef = new AtomicReference<>(new NullProgressMonitor());
     private final VoiceInputService voiceService = new VoiceInputService();
+
+    /**
+     * Bumped on every session switch (new/resume); a send job captures the value at start and
+     * stale callbacks are dropped, so a previous session's reply can never bleed into the new
+     * conversation (chat-session design §6).
+     */
+    private final java.util.concurrent.atomic.AtomicLong uiGeneration = new java.util.concurrent.atomic.AtomicLong();
+    private volatile long activeJobGeneration = -1;
 
     private volatile boolean recording = false;
 
@@ -174,6 +185,8 @@ public class AIChatView implements EclipseAiMonitor {
         this.parent = parent;
         parent.setLayout(new GridLayout(1, false));
 
+        createSessionBar(parent);
+
         // History and input are the two panes of a SashForm: SWT owns the divider, the drag
         // and the re-layout, so nothing here has to push heights around by hand.
         splitter = new SashForm(parent, SWT.VERTICAL);
@@ -188,6 +201,24 @@ public class AIChatView implements EclipseAiMonitor {
         registerPreferenceListener();
         loadInitialConfig();
         initToolsAndContext();
+    }
+
+    /** Top-level New Session / History actions (chat-session design §9.1). */
+    private void createSessionBar(Composite parent) {
+        if (aiService.getSessionManager() == null) return; // persistence off → no session UI
+
+        var bar = new org.eclipse.swt.widgets.ToolBar(parent, SWT.FLAT | SWT.RIGHT);
+        bar.setLayoutData(new GridData(SWT.END, SWT.TOP, true, false));
+
+        var newSession = new org.eclipse.swt.widgets.ToolItem(bar, SWT.PUSH);
+        newSession.setText("＋ New Session");
+        newSession.setToolTipText("Start a new empty conversation — the current one stays available in History");
+        newSession.addListener(SWT.Selection, e -> onNewSession());
+
+        var history = new org.eclipse.swt.widgets.ToolItem(bar, SWT.PUSH);
+        history.setText("History");
+        history.setToolTipText("Resume or delete saved conversations of this workspace");
+        history.addListener(SWT.Selection, e -> onShowHistory());
     }
 
     private void createChatHistoryWidget(Composite parent) {
@@ -440,10 +471,107 @@ public class AIChatView implements EclipseAiMonitor {
         statusLine.updateCompact(s.getContextSize(), s.getAutoCompactAfter());
     }
 
+    // -------------------------------------------------------------------------
+    // Sessions (chat-session design §9/§9.1)
+    // -------------------------------------------------------------------------
+
+    /** New empty conversation; the previous one stays resumable from History. */
+    private void onNewSession() {
+        // non-blocking cancel — the manager drops a turn that ends after the switch
+        if (actionsBar.isWorking()) getIProgressMonitor().setCanceled(true);
+        uiGeneration.incrementAndGet();
+        aiService.startNewSession();
+        chatHistory.clear();
+        shownSurvey.set(null);
+        keepFileChanges();
+        refreshStatusLine();
+        actionsBar.updateModeUI(aiService.getPeonMode(), isImplEnabled());
+    }
+
+    private void onShowHistory() {
+        var manager = aiService.getSessionManager();
+        if (manager == null) return;
+        var dialog = new SessionHistoryDialog(parent.getShell(),
+                manager::listSessions,
+                id -> {
+                    if (id.equals(manager.currentSessionId())) uiGeneration.incrementAndGet();
+                    aiService.deleteSession(id); // active one switches to a fresh session first
+                    EclipseUtil.runInUiThread(parent, () -> { chatHistory.clear(); refreshStatusLine(); });
+                });
+        if (dialog.open() == org.eclipse.jface.window.Window.OK && dialog.getSelectedSessionId() != null) {
+            resumeSession(dialog.getSelectedSessionId());
+        }
+        // browsing or dismissing the dialog changes nothing
+    }
+
+    private void resumeSession(String sessionId) {
+        if (actionsBar.isWorking()) getIProgressMonitor().setCanceled(true);
+        uiGeneration.incrementAndGet();
+
+        var loaded = aiService.restoreSession(sessionId);
+        if (loaded.isEmpty()) {
+            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM, "This session could not be loaded."));
+            return;
+        }
+        renderSessionTranscript(loaded.get());
+        refreshStatusLine();
+        actionsBar.updateModeUI(aiService.getPeonMode(), isImplEnabled());
+        keepFileChanges();
+        shownSurvey.set(null);
+    }
+
+    /** Renders the saved transcript, marking uncommitted records and an interrupted session. */
+    private void renderSessionTranscript(SessionDirectory.LoadedSession loaded) {
+        chatHistory.clear();
+        var lastCommitted = loaded.checkpoint().lastTranscriptSeq();
+        var manager = aiService.getSessionManager();
+        boolean unconfirmedMarkerShown = false;
+        for (var event : manager.currentTranscript()) {
+            var message = toSimpleMessage(event);
+            if (message == null) continue;
+            if (!unconfirmedMarkerShown && loaded.recovery().interrupted() && event.seq() > lastCommitted) {
+                chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                        "— the records below were written but never committed (session was interrupted) —"));
+                unconfirmedMarkerShown = true;
+            }
+            chatHistory.appendMessage(message);
+        }
+        if (loaded.recovery().interrupted()) {
+            var tools = loaded.recovery().unresolvedToolIntents().stream()
+                    .map(TranscriptEvent::toolName).distinct().toList();
+            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                    "This session was interrupted. "
+                    + (tools.isEmpty() ? "" : "Tools with UNKNOWN outcome: " + String.join(", ", tools) + ". ")
+                    + "Review the state before continuing — nothing was re-run automatically."));
+        }
+        if (!aiService.isProjectBindingValid(loaded)) {
+            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                    "This session was bound to project '" + loaded.checkpoint().meta().projectName()
+                    + "', which no longer exists in this workspace. Verify the selected project before running tools."));
+        }
+    }
+
+    /** History rendering: WAL/bookkeeping events are invisible, everything user-facing maps 1:1. */
+    private static SimpleMessage toSimpleMessage(TranscriptEvent event) {
+        return switch (event.type()) {
+            case USER         -> new SimpleMessage(Type.USER, event.text());
+            case AI           -> new SimpleMessage(Type.AI, event.text());
+            case THINK        -> new SimpleMessage(Type.THINK, event.text());
+            case TOOL_RESULT  -> new SimpleMessage(Type.TOOL, event.toolName() + ": " + StringUtil.stripToEmpty(event.text()));
+            case PROBLEM      -> new SimpleMessage(Type.PROBLEM, event.text());
+            case COMPACTED    -> new SimpleMessage(Type.TOOL, "Session compacted — earlier messages replaced by a summary for the model (full history kept here)");
+            case CLEARED      -> new SimpleMessage(Type.TOOL, "Context cleared — the model forgot the messages above");
+            case TURN_STARTED, TURN_COMMITTED, TOOL_INTENT -> null;
+        };
+    }
+
     @PreDestroy
     public void dispose() {
         if (questionWidget != null) questionWidget.cancelSilently();
         InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID).removePreferenceChangeListener(prefListener);
+        // never blocks the UI thread: signals cancel; the WAL recovers an in-flight turn as interrupted
+        if (actionsBar != null && actionsBar.isWorking()) getIProgressMonitor().setCanceled(true);
+        aiService.closeSessions();
         aiService.disconnectMcp();
         voiceService.close();
     }
@@ -567,12 +695,18 @@ public class AIChatView implements EclipseAiMonitor {
 
     @Override
     public void onChatResponse(SimpleMessage m) {
+        if (isStaleJobCallback()) return; // a previous session's reply must not reach this view
         EclipseUtil.runInUiThread(parent, () -> {
             var ai = aiService.getActiveService();
             chatHistory.hideLiveStatus();
             chatHistory.appendMessage(m);
             statusLine.updateCompact(ai.getContextSize(), ai.getAutoCompactAfter());
         });
+    }
+
+    /** True when the running job was started before the last session switch (design §6). */
+    private boolean isStaleJobCallback() {
+        return activeJobGeneration != uiGeneration.get();
     }
 
     @Override
@@ -591,6 +725,7 @@ public class AIChatView implements EclipseAiMonitor {
 
     @Override
     public void onStreamingChunk(OnPartialAiResponse r) {
+        if (isStaleJobCallback()) return;
         chatHistory.onStreamingChunk(r);
     }
 
@@ -1216,6 +1351,7 @@ public class AIChatView implements EclipseAiMonitor {
         }
 
         lockWhileWorking(true);
+        activeJobGeneration = uiGeneration.get(); // stale-callback guard baseline for this job
         Job.create("Peon AI request", monitor -> {
             monitor.beginTask("Arbeit, Arbeit!", 100);
             monitorRef.set(monitor);

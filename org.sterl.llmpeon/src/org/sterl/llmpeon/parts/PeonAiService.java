@@ -34,6 +34,10 @@ import org.sterl.llmpeon.parts.tools.EclipseRunTestTool;
 import org.sterl.llmpeon.parts.tools.EclipseWorkspaceReadFileTool;
 import org.sterl.llmpeon.parts.tools.EclipseWorkspaceWriteFileTool;
 import org.sterl.llmpeon.parts.tools.UserProfileTool;
+import org.sterl.llmpeon.session.SessionAggregate;
+import org.sterl.llmpeon.session.SessionDirectory;
+import org.sterl.llmpeon.session.SessionManager;
+import org.sterl.llmpeon.session.SessionSource;
 import org.sterl.llmpeon.skill.SkillService;
 import org.sterl.llmpeon.tool.ToolService;
 import org.sterl.llmpeon.tool.tools.DiskFileReadTool;
@@ -55,7 +59,7 @@ import dev.langchain4j.data.message.UserMessage;
  * without requiring locks. The downstream setters on individual services are called from the
  * Eclipse DI thread and are inherently serialized by the single-threaded event dispatch.</p>
  */
-public class PeonAiService implements MessageProvider {
+public class PeonAiService implements MessageProvider, SessionSource {
 
     private final ConfiguredModel configuredModel;
     private final ToolService toolService;
@@ -77,8 +81,11 @@ public class PeonAiService implements MessageProvider {
 
     /** Written from Eclipse DI thread, read from background LLM job threads. */
     private final AtomicReference<IProject> currentProject = new AtomicReference<>();
-    
+
     private volatile PeonMode mode = PeonMode.DEV;
+
+    /** Null when persistence is disabled or the store could not be opened — chat still works. */
+    private final SessionManager sessionManager;
     
     /**
      * Package-private constructor for unit tests — accepts pre-built services to avoid
@@ -88,6 +95,7 @@ public class PeonAiService implements MessageProvider {
         this.configuredModel = configuredModel;
         this.plannerService = plannerService;
         this.developerService = developerService;
+        this.sessionManager = null;
         this.queryToSourceService = null;
         this.queryToSourceMode = null;
         this.toolService = null;
@@ -155,6 +163,30 @@ public class PeonAiService implements MessageProvider {
         mcpConnectionService = new McpConnectionService(toolService, mcpStateChange);
 
         updateConfig(configuredModel.getConfig());
+
+        sessionManager = openSessionManager(rootPath);
+        if (sessionManager != null) {
+            developerService.setTurnRecorder(sessionManager.recorder(PeonMode.DEV));
+            plannerService.setTurnRecorder(sessionManager.recorder(PeonMode.PLAN));
+            sessionManager.startFresh(); // design §9: launching always starts an empty session
+        }
+    }
+
+    /** Persistence failures never break the chat view — they only disable session saving. */
+    private SessionManager openSessionManager(java.nio.file.Path workspacePath) {
+        var prefs = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
+        if (!prefs.getBoolean(PeonConstants.PREF_SESSION_PERSISTENCE_ENABLED, true)) return null;
+        try {
+            var base = prefs.get(PeonConstants.PREF_SESSION_BASE_PATH, "");
+            var basePath = base == null || base.isBlank()
+                    ? java.nio.file.Path.of(System.getProperty("user.home"), ".peon-ai")
+                    : java.nio.file.Path.of(base);
+            return new SessionManager(basePath, workspacePath, this);
+        } catch (RuntimeException e) {
+            org.slf4j.LoggerFactory.getLogger(PeonAiService.class)
+                    .warn("Session persistence disabled — store could not be opened", e);
+            return null;
+        }
     }
     
     /**
@@ -245,6 +277,98 @@ public class PeonAiService implements MessageProvider {
             plan.ifPresent(developerService::addMessage);
         }
         return plan.isPresent();
+    }
+
+    // -------------------------------------------------------------------------
+    // Sessions (chat-session design §5/§6/§9) — Phase 1: DEV + PLAN only
+    // -------------------------------------------------------------------------
+
+    /** Null when persistence is off; callers degrade to the previous no-session behavior. */
+    public SessionManager getSessionManager() {
+        return sessionManager;
+    }
+
+    /**
+     * New empty session; keeps the saved one in history. The caller must have canceled the
+     * running job first (UI protocol) — stale turns are dropped by the manager either way.
+     */
+    public void startNewSession() {
+        if (sessionManager != null) sessionManager.startFresh();
+        developerService.replaceMessages(List.of(), 0);
+        plannerService.replaceMessages(List.of(), 0);
+    }
+
+    /**
+     * Dedicated restore path (NOT {@link #setPeonMode(PeonMode)}): injects both memories and the
+     * active mode verbatim — no reset, no plan re-injection, no auto-run.
+     */
+    public java.util.Optional<SessionDirectory.LoadedSession> restoreSession(String sessionId) {
+        if (sessionManager == null) return java.util.Optional.empty();
+        var loaded = sessionManager.resume(sessionId);
+        if (loaded.isEmpty() || !loaded.get().compatible()) return loaded;
+
+        var checkpoint = loaded.get().checkpoint();
+        var aggregate = checkpoint.aggregate();
+        var tokens = checkpoint.meta().contextTokens();
+        developerService.replaceMessages(aggregate.devMessages(), tokens);
+        plannerService.replaceMessages(aggregate.planMessages(), tokens);
+        this.mode = aggregate.activeMode() == PeonMode.PLAN ? PeonMode.PLAN : PeonMode.DEV;
+        return loaded;
+    }
+
+    /** Deleting the active session switches to a fresh one first (design §9.1). */
+    public void deleteSession(String sessionId) {
+        if (sessionManager == null) return;
+        boolean wasActive = sessionId.equals(sessionManager.currentSessionId());
+        sessionManager.deleteSession(sessionId);
+        if (wasActive) {
+            developerService.replaceMessages(List.of(), 0);
+            plannerService.replaceMessages(List.of(), 0);
+        }
+    }
+
+    /** Verifies the restored session's project binding against the workspace (design §7). */
+    public boolean isProjectBindingValid(SessionDirectory.LoadedSession loaded) {
+        var boundName = loaded.checkpoint().meta().projectName();
+        if (boundName == null || boundName.isBlank()) return true; // unbound sessions open freely
+        var project = org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot().getProject(boundName);
+        return project != null && project.exists();
+    }
+
+    // SessionSource — called on the turn's executing thread at commit points
+    @Override
+    public SessionAggregate snapshotAggregate() {
+        var activeMode = mode == PeonMode.PLAN ? PeonMode.PLAN : PeonMode.DEV;
+        return SessionAggregate.of(activeMode, developerService.getMessages(), plannerService.getMessages());
+    }
+
+    @Override
+    public String projectName() {
+        var p = currentProject.get();
+        return p == null ? null : p.getName();
+    }
+
+    @Override
+    public String projectLocation() {
+        var p = currentProject.get();
+        var path = p == null ? null : JdtUtil.diskPathOf(p);
+        return path == null ? null : path.toString();
+    }
+
+    @Override
+    public int contextTokens() {
+        return (mode == PeonMode.PLAN ? plannerService : developerService).getContextSize();
+    }
+
+    /**
+     * Shutdown: never blocks the UI thread (design §6). Every turn already committed at its
+     * boundary; an in-flight one is recovered as interrupted through the WAL on the next start.
+     */
+    public void closeSessions() {
+        if (sessionManager == null) return;
+        var t = new Thread(sessionManager::close, "peon-session-close");
+        t.setDaemon(true);
+        t.start();
     }
 
     // -------------------------------------------------------------------------

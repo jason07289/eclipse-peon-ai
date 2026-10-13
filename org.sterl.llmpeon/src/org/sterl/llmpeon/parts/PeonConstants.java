@@ -47,6 +47,11 @@ public interface PeonConstants {
     /** File or directory holding the user global AGENTS.md, empty = none. Default ~/.claude/AGENTS.md */
     String PREF_GLOBAL_AGENTS_MD   = "agentsMd.globalFile";
 
+    /** Base directory of the session store, empty = default {@code ~/.peon-ai} (design §1). */
+    String PREF_SESSION_BASE_PATH  = "session.basePath";
+    /** boolean, default true. Off stops NEW writes only; existing sessions are kept (design §9). */
+    String PREF_SESSION_PERSISTENCE_ENABLED = "session.persistenceEnabled";
+
     String PREF_SURVEY_ENABLED     = "survey.enabled";          // boolean, default false
     String PREF_SURVEY_URL         = "survey.url";              // POST endpoint for the score
     String PREF_SURVEY_AUTH        = "survey.auth";             // basic auth "publicKey:secretKey"

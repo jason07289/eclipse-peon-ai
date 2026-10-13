@@ -230,6 +230,17 @@ public abstract class AbstractChatService {
         turnRecorder.cleared();
     }
 
+    /**
+     * Restore path (chat-session design §5): replaces the memory VERBATIM — no role-alternation
+     * repair (the stored list was valid when saved, and byte-identical replay keeps the KV cache),
+     * and no session hooks (restoring must not commit a revision or fire {@code cleared}).
+     */
+    public void replaceMessages(List<ChatMessage> messages, int contextTokens) {
+        memory.clear();
+        if (messages != null) messages.forEach(memory::add);
+        contextTokenSize = Math.max(contextTokens, 0);
+    }
+
     /** Session hooks; pass {@link TurnRecorder#NO_OP} to detach. Never null. */
     public void setTurnRecorder(TurnRecorder turnRecorder) {
         this.turnRecorder = turnRecorder == null ? TurnRecorder.NO_OP : turnRecorder;
