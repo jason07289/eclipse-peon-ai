@@ -203,21 +203,20 @@ public class AIChatView implements EclipseAiMonitor {
         initToolsAndContext();
     }
 
-    /** Top-level New Session / History actions (chat-session design §9.1). */
+    /**
+     * Top-level History action (chat-session design §9.1). A separate "New Session" button was
+     * dropped on purpose: Clear already archives the conversation and starts a fresh session, so
+     * the two were identical. Session tabs are a deferred design (session-tabs-design.md).
+     */
     private void createSessionBar(Composite parent) {
         if (aiService.getSessionManager() == null) return; // persistence off → no session UI
 
         var bar = new org.eclipse.swt.widgets.ToolBar(parent, SWT.FLAT | SWT.RIGHT);
         bar.setLayoutData(new GridData(SWT.END, SWT.TOP, true, false));
 
-        var newSession = new org.eclipse.swt.widgets.ToolItem(bar, SWT.PUSH);
-        newSession.setText("＋ New Session");
-        newSession.setToolTipText("Start a new empty conversation — the current one stays available in History");
-        newSession.addListener(SWT.Selection, e -> onNewSession());
-
         var history = new org.eclipse.swt.widgets.ToolItem(bar, SWT.PUSH);
         history.setText("History");
-        history.setToolTipText("Resume or delete saved conversations of this workspace");
+        history.setToolTipText("Resume or delete saved conversations of this workspace — Clear starts a new one");
         history.addListener(SWT.Selection, e -> onShowHistory());
     }
 

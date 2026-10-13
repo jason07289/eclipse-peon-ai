@@ -1,7 +1,17 @@
 # Session Tabs — Parallel Conversations Design
 
-Status: **draft, not yet implemented** (2026-10-13). Builds on
+Status: **DEFERRED** (user decision 2026-10-13). Builds on
 [Chat Sessions](./chat-session-design.md) (Phase 1 implemented).
+
+An adversarial review (Codex, 2026-10-13) confirmed the cost concern: 12 findings, the heaviest
+being resident SWT-Browser native resources/DOM per tab (a tab cap bounds the browser COUNT, not
+memory — Browser-LRU with safe unload, DOM paging and per-tab budgets would be required),
+per-OS browser process models that invalidate a single "8 tabs is fine" check, lifecycle gaps
+(close/cancel/reopen, AskUserTool waiting across tabs), and the shared ToolService/ConfiguredModel
+request state being unsafe even for Stage A (turn-scoped target capture must come first).
+Decision: not worth the weight for now — the shipped alternative is History-only (Clear archives
+and starts fresh; History resumes). This document is kept as the starting point if tabs are
+revisited; fold the review findings in before implementing.
 
 Goal: Cursor-style "+ new agent" tabs — multiple conversations open side by side in the Peon AI
 view, each a session, switchable instantly, eventually running turns in parallel.
