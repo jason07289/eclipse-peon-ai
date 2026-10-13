@@ -312,12 +312,16 @@ A's conversation at B.
   also creates no persisted revision. Normal mutation commits apply once the
   session has been persisted. A first turn that is canceled or interrupted
   remains discoverable in history.
-- **Clear keeps the session**: on a persisted session, Clear commits an
-  empty-memory revision and appends a `CLEARED` transcript event — the
-  history entry, title, and full transcript remain; only the model context is
-  dropped (same as today's behavior, now recorded). Clear never deletes a
-  session; deletion happens only through History. On an unpersisted empty
-  session Clear is a no-op on disk (§ lazy persistence above).
+- **Clear archives, it never destroys** (user decision 2026-10-13, second
+  pass): in DEV/PLAN, Clear behaves exactly like New Session — the current
+  session keeps its last committed checkpoint untouched and stays fully
+  resumable from History (pre-clear model context included); the view starts
+  a fresh empty session. Clear never deletes a session; deletion happens only
+  through History. On an unpersisted empty session Clear creates nothing on
+  disk. AGENT/QUERY_TO_SOURCE and persistence-off keep the old in-memory
+  clear/reset. The `CLEARED` transcript event remains for IN-session context
+  drops performed by the system (e.g. the PLAN→DEV handoff clearing the DEV
+  memory), which commit a revision as any other mutation.
 - Titles: first user message truncated to 60 chars; optional LLM-generated
   titles later (Continue-style, off by default).
 - Retention (all preferences): maxAge default 30 days, maxCount default 50,
@@ -414,10 +418,10 @@ A's conversation at B.
   a turn is running → cancel is requested without blocking the UI; late
   callbacks cannot populate the new/resumed session, and the old session's
   saved history remains available.
-- Clear a persisted session → history row and transcript survive; resume
-  shows the full transcript with a cleared-context marker and empty model
-  memory. Delete the active session from History → view switches to a fresh
-  empty session, files are removed.
+- Clear a persisted DEV/PLAN session → it stays in History and resumes with
+  its full pre-clear model context, identical to New Session. Delete the
+  active session from History → view switches to a fresh empty session,
+  files are removed.
 - Interrupted sessions older than maxAge are cleaned up; fresher ones survive
   maxCount/size eviction.
 - Two Eclipse instances creating the same workspace store concurrently; a

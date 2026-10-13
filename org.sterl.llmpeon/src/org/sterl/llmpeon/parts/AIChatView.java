@@ -461,8 +461,16 @@ public class AIChatView implements EclipseAiMonitor {
             // also drops the remembered step progress, not just the chat memory
             aiService.getQueryToSourceMode().reset();
             updateQueryBarState();
-        } else {
+        } else if (aiService.getPeonMode() == PeonMode.AGENT || aiService.getSessionManager() == null) {
+            // AGENT memories are not session-managed (Phase 1), and without a store there is
+            // nothing to archive — plain in-memory clear as before
             s.clear();
+        } else {
+            // DEV/PLAN: Clear archives, it never destroys — the session keeps its last committed
+            // checkpoint untouched and resumes from History with the full pre-clear context,
+            // exactly like New Session (user decision 2026-10-13)
+            onNewSession();
+            return;
         }
         chatHistory.clear();
         // the survey bar goes away with the history, so nothing is left to vote on
