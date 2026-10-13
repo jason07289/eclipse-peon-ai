@@ -29,20 +29,31 @@ public class Transcript implements AutoCloseable {
     private final Path file;
     private final FileChannel channel;
     private long nextSeq;
+    /** 0 = unlimited. Over the cap, only WAL/commit/compaction records keep being written. */
+    private final long maxBytes;
+    private long bytesWritten;
+    private boolean capAnnounced;
 
-    private Transcript(Path file, FileChannel channel, long nextSeq) {
+    private Transcript(Path file, FileChannel channel, long nextSeq, long maxBytes, long existingBytes) {
         this.file = file;
         this.channel = channel;
         this.nextSeq = nextSeq;
+        this.maxBytes = maxBytes;
+        this.bytesWritten = existingBytes;
     }
 
     public static Transcript open(Path file) {
+        return open(file, 0);
+    }
+
+    public static Transcript open(Path file, long maxBytes) {
         try {
             Files.createDirectories(file.getParent());
             long nextSeq = lastSeq(file) + 1;
+            long existing = Files.exists(file) ? Files.size(file) : 0;
             var channel = FileChannel.open(file,
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
-            return new Transcript(file, channel, nextSeq);
+            return new Transcript(file, channel, nextSeq, maxBytes, existing);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to open transcript " + file, e);
         }
@@ -54,14 +65,45 @@ public class Transcript implements AutoCloseable {
 
     public synchronized TranscriptEvent append(TranscriptEvent.Type type, String turnId, String mode,
             String text, String toolCallId, String toolName) {
+        if (overCap(type)) {
+            announceCapOnce(turnId, mode);
+            return null; // history detail dropped; checkpoints and WAL keep working (design §9)
+        }
         var event = new TranscriptEvent(nextSeq, turnId, mode, System.currentTimeMillis(),
                 type, text, toolCallId, toolName);
         try {
             var line = SessionFiles.mapper().writeValueAsString(event) + "\n";
-            channel.write(ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8)));
+            var bytes = line.getBytes(StandardCharsets.UTF_8);
+            channel.write(ByteBuffer.wrap(bytes));
+            bytesWritten += bytes.length;
             if (type.requiresSync()) channel.force(false);
             nextSeq++;
             return event;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to append to transcript " + file, e);
+        }
+    }
+
+    private boolean overCap(TranscriptEvent.Type type) {
+        if (maxBytes <= 0 || bytesWritten < maxBytes) return false;
+        return switch (type) {
+            // correctness records always go through — they are small and bounded per turn
+            case TURN_STARTED, TOOL_INTENT, TURN_COMMITTED, COMPACTED, CLEARED, PROBLEM -> false;
+            default -> true;
+        };
+    }
+
+    private void announceCapOnce(String turnId, String mode) {
+        if (capAnnounced) return;
+        capAnnounced = true;
+        var event = new TranscriptEvent(nextSeq, turnId, mode, System.currentTimeMillis(),
+                TranscriptEvent.Type.PROBLEM,
+                "Transcript size limit reached — further message details are not recorded for this session.",
+                null, null);
+        try {
+            var line = SessionFiles.mapper().writeValueAsString(event) + "\n";
+            channel.write(ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8)));
+            nextSeq++;
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to append to transcript " + file, e);
         }

@@ -85,7 +85,11 @@ public class SessionDirectory {
     }
 
     public Transcript openTranscript() {
-        return Transcript.open(dir.resolve(TRANSCRIPT));
+        return openTranscript(0);
+    }
+
+    public Transcript openTranscript(long maxBytes) {
+        return Transcript.open(dir.resolve(TRANSCRIPT), maxBytes);
     }
 
     public List<TranscriptEvent> readTranscript() {

@@ -40,6 +40,9 @@ public class SessionManager implements AutoCloseable {
     /** The files a running turn writes to — captured at turnStarted, immune to later switches. */
     private record TurnContext(SessionDirectory dir, Transcript transcript, SessionMeta meta, long generation) {}
 
+    /** Per-session transcript detail cap (design §9); checkpoints keep working beyond it. */
+    static final long TRANSCRIPT_MAX_BYTES = 50L * 1024 * 1024;
+
     private final SessionStore store;
     private final SessionSource source;
     private final ExecutorService writer = Executors.newSingleThreadExecutor(r -> {
@@ -102,7 +105,7 @@ public class SessionManager implements AutoCloseable {
 
             closeTranscript();
             dir = session.get();
-            transcript = dir.openTranscript();
+            transcript = dir.openTranscript(TRANSCRIPT_MAX_BYTES);
             meta = loaded.get().checkpoint().meta().toBuilder()
                     .updatedAt(System.currentTimeMillis()).build();
             generation.incrementAndGet();
@@ -146,6 +149,16 @@ public class SessionManager implements AutoCloseable {
             if (transcript != null) transcript.flush();
             return dir == null ? java.util.List.of() : dir.readTranscript();
         }
+    }
+
+    /** Runs cleanup on the writer (serialized with commits); a no-op on a read-only store. */
+    public void applyRetentionAsync(RetentionPolicy policy) {
+        submit(() -> {
+            if (store.isWritable()) {
+                int deleted = store.applyRetention(policy, currentSessionId());
+                if (deleted > 0) log.info("Session retention removed {} session(s)", deleted);
+            }
+        });
     }
 
     /** Blocks until all queued commits ran — used before switching and in shutdown paths off the UI thread. */
@@ -311,7 +324,7 @@ public class SessionManager implements AutoCloseable {
                     .contextTokens(source.contextTokens())
                     .build();
             dir = store.createSession(initial, source.snapshotAggregate());
-            transcript = dir.openTranscript();
+            transcript = dir.openTranscript(TRANSCRIPT_MAX_BYTES);
             meta = dir.load().orElseThrow().checkpoint().meta();
         }
     }

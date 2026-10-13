@@ -36,6 +36,12 @@
             category="org.sterl.llmpeon.prefs.AiPeon"
             class="org.sterl.llmpeon.parts.config.VoicePreferenceView">
       </page>
+      <page
+            id="org.sterl.llmpeon.prefs.Sessions"
+            name="AI Peon Sessions"
+            category="org.sterl.llmpeon.prefs.AiPeon"
+            class="org.sterl.llmpeon.parts.config.SessionPreferenceView">
+      </page>
    </extension>
 
    <extension point="org.eclipse.core.runtime.preferences">

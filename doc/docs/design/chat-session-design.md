@@ -345,7 +345,9 @@ A's conversation at B.
   2. *Migrate*: offered via dialog on path change; runs only when no turn is
      executing; copy → verify (checksums) → switch pointer/preference →
      delete source. On any failure the source is kept and the preference is
-     not switched.
+     not switched. *(Implementation status: not built yet — a path change
+     currently applies on the next Eclipse start as "open a different store";
+     the preference page says so.)*
   The path preference lives in `ConfigurationScope` (per installation, shared
   across workspaces); invalid/unwritable paths are rejected in the preference
   page validator.

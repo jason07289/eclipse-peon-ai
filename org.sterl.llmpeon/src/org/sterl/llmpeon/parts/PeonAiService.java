@@ -169,7 +169,18 @@ public class PeonAiService implements MessageProvider, SessionSource {
             developerService.setTurnRecorder(sessionManager.recorder(PeonMode.DEV));
             plannerService.setTurnRecorder(sessionManager.recorder(PeonMode.PLAN));
             sessionManager.startFresh(); // design §9: launching always starts an empty session
+            sessionManager.applyRetentionAsync(retentionPolicyFromPreferences());
         }
+    }
+
+    private static org.sterl.llmpeon.session.RetentionPolicy retentionPolicyFromPreferences() {
+        var prefs = org.eclipse.core.runtime.preferences.InstanceScope.INSTANCE.getNode(PeonConstants.PLUGIN_ID);
+        var defaults = org.sterl.llmpeon.session.RetentionPolicy.DEFAULT;
+        return new org.sterl.llmpeon.session.RetentionPolicy(
+                prefs.getInt(PeonConstants.PREF_SESSION_MAX_AGE_DAYS, defaults.maxAgeDays()),
+                prefs.getInt(PeonConstants.PREF_SESSION_MAX_COUNT, defaults.maxCount()),
+                defaults.minRetentionDays(),
+                defaults.maxTotalBytes());
     }
 
     /** Persistence failures never break the chat view — they only disable session saving. */

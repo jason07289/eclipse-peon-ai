@@ -246,6 +246,84 @@ public class SessionStore implements AutoCloseable {
         return entries.stream().sorted(Comparator.comparingLong(IndexEntry::updatedAt).reversed()).toList();
     }
 
+    // ---- retention (design §9) ----
+
+    /**
+     * Applies the cleanup policy and returns the number of deleted sessions. Order: age expiry
+     * first (applies to every status), then count eviction, then total-size eviction — the last
+     * two skip interrupted sessions. {@code protectedSessionId} (the open session) is never
+     * touched. Runs only while holding the store lock.
+     */
+    public int applyRetention(RetentionPolicy policy, String protectedSessionId) {
+        requireWritable();
+        long now = System.currentTimeMillis();
+        var entries = new ArrayList<>(rebuildIndex()); // newest first, accurate
+        int deleted = 0;
+
+        var survivors = new ArrayList<IndexEntry>();
+        for (var e : entries) {
+            boolean tooYoung = now - e.updatedAt() < policy.minRetentionMillis();
+            boolean expired = now - e.updatedAt() > policy.maxAgeMillis();
+            if (expired && !tooYoung && !e.id().equals(protectedSessionId)) {
+                deleteSession(e.id());
+                deleted++;
+            } else {
+                survivors.add(e);
+            }
+        }
+
+        // count eviction, oldest first; interrupted and protected sessions survive
+        for (int i = survivors.size() - 1; i >= 0 && countEvictable(survivors) > 0
+                && survivors.size() > policy.maxCount(); i--) {
+            var e = survivors.get(i);
+            if (isEvictable(e, protectedSessionId, now, policy)) {
+                deleteSession(e.id());
+                survivors.remove(i);
+                deleted++;
+            }
+        }
+
+        // total-size eviction, oldest first; backups/conflicts/quarantine count toward the size
+        long total = directorySize(root);
+        for (int i = survivors.size() - 1; i >= 0 && total > policy.maxTotalBytes(); i--) {
+            var e = survivors.get(i);
+            if (!isEvictable(e, protectedSessionId, now, policy)) continue;
+            long freed = directorySize(root.resolve(e.id()));
+            deleteSession(e.id());
+            survivors.remove(i);
+            deleted++;
+            total -= freed;
+        }
+
+        if (deleted > 0) writeIndex(new Index(sorted(survivors)));
+        return deleted;
+    }
+
+    private static boolean isEvictable(IndexEntry e, String protectedSessionId, long now, RetentionPolicy policy) {
+        return !e.id().equals(protectedSessionId)
+                && e.status() != SessionStatus.INTERRUPTED
+                && now - e.updatedAt() >= policy.minRetentionMillis();
+    }
+
+    private static long countEvictable(List<IndexEntry> entries) {
+        return entries.stream().filter(e -> e.status() != SessionStatus.INTERRUPTED).count();
+    }
+
+    static long directorySize(Path dir) {
+        if (!Files.isDirectory(dir)) return 0;
+        try (var walk = Files.walk(dir)) {
+            return walk.filter(Files::isRegularFile).mapToLong(p -> {
+                try {
+                    return Files.size(p);
+                } catch (IOException e) {
+                    return 0;
+                }
+            }).sum();
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
     private void writeIndex(Index index) {
         try {
             SessionFiles.writeAtomic(root.resolve(INDEX_JSON),

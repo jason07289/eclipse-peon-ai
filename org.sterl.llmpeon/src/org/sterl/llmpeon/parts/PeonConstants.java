@@ -51,6 +51,8 @@ public interface PeonConstants {
     String PREF_SESSION_BASE_PATH  = "session.basePath";
     /** boolean, default true. Off stops NEW writes only; existing sessions are kept (design §9). */
     String PREF_SESSION_PERSISTENCE_ENABLED = "session.persistenceEnabled";
+    String PREF_SESSION_MAX_AGE_DAYS = "session.maxAgeDays";   // int, default 30
+    String PREF_SESSION_MAX_COUNT    = "session.maxCount";     // int, default 50
 
     String PREF_SURVEY_ENABLED     = "survey.enabled";          // boolean, default false
     String PREF_SURVEY_URL         = "survey.url";              // POST endpoint for the score
