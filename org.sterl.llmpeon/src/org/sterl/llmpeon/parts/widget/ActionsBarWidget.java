@@ -22,7 +22,6 @@ import org.sterl.llmpeon.ai.model.AiModel;
 public class ActionsBarWidget extends Composite {
 
     private Button btnClear;
-    private Button btnHistory;
     private Button btnImplement;
     private Button chkAutonomous;
     private Button btnThink;
@@ -38,7 +37,6 @@ public class ActionsBarWidget extends Composite {
 
     public ActionsBarWidget(Composite parent, int style,
             Runnable onClear,
-            Runnable onHistory,
             Runnable onImplement,
             Consumer<PeonMode> onModeChange,
             Consumer<AiModel> onModelChange,
@@ -72,11 +70,6 @@ public class ActionsBarWidget extends Composite {
         btnClear.setText("Clear");
         btnClear.setToolTipText("Archive this conversation to History and start a fresh one");
         btnClear.addListener(SWT.Selection, e -> onClear.run());
-
-        btnHistory = new Button(this, SWT.PUSH);
-        btnHistory.setText("🕘 History");
-        btnHistory.setToolTipText("Resume or delete saved conversations of this workspace");
-        btnHistory.addListener(SWT.Selection, e -> onHistory.run());
 
         buildBtnImplement(onImplement);
         buildChkAutonomous(onAutonomousChange);
@@ -163,7 +156,6 @@ public class ActionsBarWidget extends Composite {
         agentCombo.setEnabled(!value);
         modelCombo.setEnabled(!value);
         btnClear.setEnabled(!value);
-        btnHistory.setEnabled(!value);
         btnThink.setEnabled(!value);
         chkAutonomous.setEnabled(!value);
         if (value) btnImplement.setEnabled(false); // re-enable is handled by updateModeUI
@@ -205,16 +197,6 @@ public class ActionsBarWidget extends Composite {
         int idx = agentCombo.getSelectionIndex();
         PeonMode current = idx >= 0 && idx < offeredModes.size() ? offeredModes.get(idx) : PeonMode.DEV;
         rebuildModeItems(current);
-    }
-
-    /** Hides the History button when session persistence is off (no store to browse). */
-    public void setHistoryAvailable(boolean available) {
-        if (btnHistory.getVisible() == available) return;
-        var rd = btnHistory.getLayoutData() instanceof RowData existing ? existing : new RowData();
-        rd.exclude = !available;
-        btnHistory.setLayoutData(rd);
-        btnHistory.setVisible(available);
-        layout(true, true);
     }
 
     /** Allow or block selection of Peon-Agent mode. */

@@ -185,6 +185,8 @@ public class AIChatView implements EclipseAiMonitor {
         this.parent = parent;
         parent.setLayout(new GridLayout(1, false));
 
+        createSessionBar(parent);
+
         // History and input are the two panes of a SashForm: SWT owns the divider, the drag
         // and the re-layout, so nothing here has to push heights around by hand.
         splitter = new SashForm(parent, SWT.VERTICAL);
@@ -199,6 +201,21 @@ public class AIChatView implements EclipseAiMonitor {
         registerPreferenceListener();
         loadInitialConfig();
         initToolsAndContext();
+    }
+
+    /**
+     * Top-level History action (chat-session design §9.1). A real SWT Button, not a flat
+     * ToolItem — the flat variant has no border and users did not spot it. New conversations
+     * start via Clear (archive-style), so History is the only session action up here.
+     */
+    private void createSessionBar(Composite parent) {
+        if (aiService.getSessionManager() == null) return; // persistence off → no session UI
+
+        var btnHistory = new org.eclipse.swt.widgets.Button(parent, SWT.PUSH);
+        btnHistory.setText("🕘 History");
+        btnHistory.setToolTipText("Resume or delete saved conversations of this workspace — Clear starts a new one");
+        btnHistory.setLayoutData(new GridData(SWT.END, SWT.TOP, true, false));
+        btnHistory.addListener(SWT.Selection, e -> onShowHistory());
     }
 
     private void createChatHistoryWidget(Composite parent) {
@@ -261,15 +278,12 @@ public class AIChatView implements EclipseAiMonitor {
     private void createActionBars() {
         actionsBar = new ActionsBarWidget(inputBlock, SWT.NONE,
             this::onClear,
-            this::onShowHistory,
             this::doStartImpl,
             this::onModeChange,
             aiService::setModel,
             autonomous -> aiService.getAgentMode().setAutonomous(autonomous),
             aiService::withThinking
         );
-        // the History button only makes sense with a session store behind it
-        actionsBar.setHistoryAvailable(aiService.getSessionManager() != null);
 
         queryBar = new QueryToSourceBarWidget(inputBlock, SWT.NONE,
             this::onRunStep
