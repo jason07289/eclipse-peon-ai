@@ -47,6 +47,7 @@ public class SessionHistoryDialog extends Dialog {
 
     private Table table;
     private Label emptyHint;
+    private Label copyHint;
     private String selectedSessionId;
     /** UI thread only — true while a delete is still running on the session writer. */
     private boolean deleting;
@@ -92,7 +93,8 @@ public class SessionHistoryDialog extends Dialog {
         emptyHint.setText("No saved conversations yet — a session appears here after its first message is sent.");
         emptyHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
-        table = new Table(area, SWT.BORDER | SWT.FULL_SELECTION | SWT.SINGLE);
+        // no FULL_SELECTION: only the ID cell is highlighted, so it reads as "this is what Ctrl+C copies"
+        table = new Table(area, SWT.BORDER | SWT.SINGLE);
         table.setHeaderVisible(true);
         table.setLinesVisible(true);
         var gd = new GridData(SWT.FILL, SWT.FILL, true, true);
@@ -106,14 +108,22 @@ public class SessionHistoryDialog extends Dialog {
         addColumn("Last used", 120);
         addColumn("Status", 90);
 
-        table.addListener(SWT.Selection, e -> updateButtons());
+        table.addListener(SWT.Selection, e -> {
+            updateButtons();
+            showCopyHint(null); // a "copied" notice belongs to the previously selected row
+        });
         table.addListener(SWT.DefaultSelection, e -> buttonPressed(RESUME_ID)); // double-click = Resume
+        table.addListener(SWT.MouseDown, e -> selectRowAt(e.x, e.y));
         // design §9.2: the ID is what users type into a new chat ("ses_a3f9c2d1 이어서 작업해줘")
         table.setToolTipText("Ctrl+C (⌘C) copies the session ID — type it in a new chat, e.g. \"ses_a3f9c2d1 이어서 작업해줘\","
                 + " to continue that conversation");
         table.addListener(SWT.KeyDown, e -> {
             if ((e.stateMask & SWT.MOD1) != 0 && e.keyCode == 'c') copySelectedId(); // Ctrl+C / ⌘C
         });
+
+        copyHint = new Label(area, SWT.NONE);
+        copyHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        showCopyHint(null);
 
         refresh();
         return area;
@@ -149,6 +159,26 @@ public class SessionHistoryDialog extends Dialog {
         return "";
     }
 
+    /**
+     * Without FULL_SELECTION some platforms (Windows) select a row only on a click in its first
+     * column — a click on any cell of the row should still select it.
+     */
+    private void selectRowAt(int x, int y) {
+        for (int i = table.getTopIndex(); i < table.getItemCount(); i++) {
+            var item = table.getItem(i);
+            for (int col = 0; col < table.getColumnCount(); col++) {
+                if (item.getBounds(col).contains(x, y)) {
+                    if (table.getSelectionIndex() != i) {
+                        table.setSelection(i);
+                        updateButtons();
+                        showCopyHint(null);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
     private SessionStore.IndexEntry selected() {
         var items = table.getSelection();
         return items.length == 0 ? null : (SessionStore.IndexEntry) items[0].getData();
@@ -158,12 +188,21 @@ public class SessionHistoryDialog extends Dialog {
         var entry = selected();
         if (entry == null) return;
         var clipboard = new Clipboard(getShell().getDisplay());
+        var id = SessionIds.displayId(entry.id());
         try {
-            clipboard.setContents(new Object[] { SessionIds.displayId(entry.id()) },
-                    new Transfer[] { TextTransfer.getInstance() });
+            clipboard.setContents(new Object[] { id }, new Transfer[] { TextTransfer.getInstance() });
         } finally {
             clipboard.dispose();
         }
+        showCopyHint(id);
+    }
+
+    /** Visible feedback for the otherwise silent Ctrl+C; {@code null} shows the how-to line. */
+    private void showCopyHint(String copiedId) {
+        copyHint.setText(copiedId == null
+                ? "Select a row and press Ctrl+C (⌘C) to copy its session ID."
+                : "✓ Copied " + copiedId + " — paste it into a new chat, e.g. \"" + copiedId + " 이어서 작업해줘\".");
+        copyHint.getParent().layout();
     }
 
     private void updateButtons() {

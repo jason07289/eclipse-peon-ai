@@ -40,8 +40,10 @@ public class SessionHistoryTool extends AbstractTool {
     }
 
     @Tool(name = NAME, value = """
-            Read an earlier saved chat session of this workspace by its session ID (looks like ses_a3f9c2d1).
-            Call it when the user mentions such an ID to continue or consult a previous conversation.
+            Read an earlier saved chat session of this workspace by its session ID.
+            Any token "ses_" + hex characters (e.g. ses_a3f9c2d1) in the user's message is a chat session ID,
+            never a file, class or project name. When the user mentions one, call this tool FIRST,
+            before any file or project tool, then continue the work described in that session.
             Returns a read-only, size-limited view: goal, files edited/read, interruption state and the turns.
             Omitted turn ranges are marked and can be loaded with fromTurn/toTurn.
             """)
