@@ -12,6 +12,9 @@ import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.dnd.Clipboard;
+import org.eclipse.swt.dnd.TextTransfer;
+import org.eclipse.swt.dnd.Transfer;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
@@ -20,6 +23,7 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.TableColumn;
 import org.eclipse.swt.widgets.TableItem;
+import org.sterl.llmpeon.session.SessionIds;
 import org.sterl.llmpeon.session.SessionStatus;
 import org.sterl.llmpeon.session.SessionStore;
 
@@ -92,10 +96,11 @@ public class SessionHistoryDialog extends Dialog {
         table.setHeaderVisible(true);
         table.setLinesVisible(true);
         var gd = new GridData(SWT.FILL, SWT.FILL, true, true);
-        gd.widthHint = 560;
+        gd.widthHint = 660;
         gd.heightHint = 280;
         table.setLayoutData(gd);
 
+        addColumn("ID", 100);
         addColumn("Title", 260);
         addColumn("Project", 100);
         addColumn("Last used", 120);
@@ -103,6 +108,12 @@ public class SessionHistoryDialog extends Dialog {
 
         table.addListener(SWT.Selection, e -> updateButtons());
         table.addListener(SWT.DefaultSelection, e -> buttonPressed(RESUME_ID)); // double-click = Resume
+        // design §9.2: the ID is what users type into a new chat ("ses_a3f9c2d1 이어서 작업해줘")
+        table.setToolTipText("Ctrl+C (⌘C) copies the session ID — type it in a new chat, e.g. \"ses_a3f9c2d1 이어서 작업해줘\","
+                + " to continue that conversation");
+        table.addListener(SWT.KeyDown, e -> {
+            if ((e.stateMask & SWT.MOD1) != 0 && e.keyCode == 'c') copySelectedId(); // Ctrl+C / ⌘C
+        });
 
         refresh();
         return area;
@@ -119,10 +130,11 @@ public class SessionHistoryDialog extends Dialog {
         for (var entry : sessions.get()) {
             var item = new TableItem(table, SWT.NONE);
             item.setData(entry);
-            item.setText(0, entry.title() == null ? "(untitled)" : entry.title());
-            item.setText(1, entry.projectName() == null ? "—" : entry.projectName());
-            item.setText(2, TIME.format(Instant.ofEpochMilli(entry.updatedAt()).atZone(ZoneId.systemDefault())));
-            item.setText(3, statusLabel(entry));
+            item.setText(0, SessionIds.displayId(entry.id()));
+            item.setText(1, entry.title() == null ? "(untitled)" : entry.title());
+            item.setText(2, entry.projectName() == null ? "—" : entry.projectName());
+            item.setText(3, TIME.format(Instant.ofEpochMilli(entry.updatedAt()).atZone(ZoneId.systemDefault())));
+            item.setText(4, statusLabel(entry));
         }
         var hasRows = table.getItemCount() > 0;
         emptyHint.setVisible(!hasRows);
@@ -140,6 +152,18 @@ public class SessionHistoryDialog extends Dialog {
     private SessionStore.IndexEntry selected() {
         var items = table.getSelection();
         return items.length == 0 ? null : (SessionStore.IndexEntry) items[0].getData();
+    }
+
+    private void copySelectedId() {
+        var entry = selected();
+        if (entry == null) return;
+        var clipboard = new Clipboard(getShell().getDisplay());
+        try {
+            clipboard.setContents(new Object[] { SessionIds.displayId(entry.id()) },
+                    new Transfer[] { TextTransfer.getInstance() });
+        } finally {
+            clipboard.dispose();
+        }
     }
 
     private void updateButtons() {

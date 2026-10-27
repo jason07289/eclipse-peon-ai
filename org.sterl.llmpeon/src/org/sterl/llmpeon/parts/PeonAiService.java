@@ -43,6 +43,7 @@ import org.sterl.llmpeon.tool.ToolService;
 import org.sterl.llmpeon.tool.tools.DiskFileReadTool;
 import org.sterl.llmpeon.tool.tools.DiskFileWriteTool;
 import org.sterl.llmpeon.tool.tools.DiskGrepTool;
+import org.sterl.llmpeon.tool.tools.SessionHistoryTool;
 import org.sterl.llmpeon.tool.tools.SkillTool;
 
 import dev.langchain4j.data.message.UserMessage;
@@ -168,6 +169,11 @@ public class PeonAiService implements MessageProvider, SessionSource {
         if (sessionManager != null) {
             developerService.setTurnRecorder(sessionManager.recorder(PeonMode.DEV));
             plannerService.setTurnRecorder(sessionManager.recorder(PeonMode.PLAN));
+            // design §9.2: "ses_xxxxxxxx 이어서 작업해줘" in a fresh chat — read-only, so PLAN gets it too
+            toolService.addTool(new SessionHistoryTool(sessionManager, name -> {
+                var executor = toolService.getExecutor(name);
+                return executor != null && executor.getTool().isEditTool();
+            }));
             sessionManager.startFresh(); // design §9: launching always starts an empty session
             sessionManager.applyRetentionAsync(retentionPolicyFromPreferences());
         }

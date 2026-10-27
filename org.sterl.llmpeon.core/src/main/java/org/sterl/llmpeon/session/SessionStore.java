@@ -210,6 +210,16 @@ public class SessionStore implements AutoCloseable {
         return SessionDirectory.open(root, dir);
     }
 
+    /**
+     * Reads a session's transcript without opening it — independent of checkpoint compatibility
+     * (design §9.2). Empty when the session does not exist (e.g. deleted meanwhile).
+     */
+    public List<TranscriptEvent> readTranscript(String sessionId) {
+        var dir = root.resolve(sessionId).normalize();
+        if (!root.equals(dir.getParent()) || !Files.isDirectory(dir)) return List.of(); // ids never escape the store
+        return Transcript.readAll(dir.resolve(SessionDirectory.TRANSCRIPT));
+    }
+
     public void deleteSession(String sessionId) {
         requireWritable();
         var dir = root.resolve(sessionId);
