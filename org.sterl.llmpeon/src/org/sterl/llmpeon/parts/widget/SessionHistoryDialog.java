@@ -18,6 +18,7 @@ import org.eclipse.swt.dnd.Transfer;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Table;
@@ -92,8 +93,7 @@ public class SessionHistoryDialog extends Dialog {
         emptyHint.setText("No saved conversations yet — a session appears here after its first message is sent.");
         emptyHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
-        // no FULL_SELECTION: only the ID cell is highlighted, so it reads as "this is what Ctrl+C copies"
-        table = new Table(area, SWT.BORDER | SWT.SINGLE);
+        table = new Table(area, SWT.BORDER | SWT.FULL_SELECTION | SWT.SINGLE);
         table.setHeaderVisible(true);
         table.setLinesVisible(true);
         var gd = new GridData(SWT.FILL, SWT.FILL, true, true);
@@ -109,7 +109,7 @@ public class SessionHistoryDialog extends Dialog {
 
         table.addListener(SWT.Selection, e -> updateButtons());
         table.addListener(SWT.DefaultSelection, e -> buttonPressed(RESUME_ID)); // double-click = Resume
-        table.addListener(SWT.MouseDown, e -> selectRowAt(e.x, e.y));
+        table.addListener(SWT.EraseItem, this::paintIdCellSelection);
         // design §9.2: the ID is what users type into a new chat ("ses_a3f9c2d1 이어서 작업해줘")
         table.setToolTipText("Ctrl+C (⌘C) copies the session ID — type it in a new chat, e.g. \"ses_a3f9c2d1 이어서 작업해줘\","
                 + " to continue that conversation");
@@ -152,22 +152,21 @@ public class SessionHistoryDialog extends Dialog {
     }
 
     /**
-     * Without FULL_SELECTION some platforms (Windows) select a row only on a click in its first
-     * column — a click on any cell of the row should still select it.
+     * Paints the selection on the ID cell only, so it reads as "this is what Ctrl+C copies". The
+     * native row highlight cannot be limited to one column (Cocoa ignores a missing
+     * FULL_SELECTION), hence the selection is suppressed and the ID cell filled by hand; the GC
+     * foreground set here is used for the cell's text.
      */
-    private void selectRowAt(int x, int y) {
-        for (int i = table.getTopIndex(); i < table.getItemCount(); i++) {
-            var item = table.getItem(i);
-            for (int col = 0; col < table.getColumnCount(); col++) {
-                if (item.getBounds(col).contains(x, y)) {
-                    if (table.getSelectionIndex() != i) {
-                        table.setSelection(i);
-                        updateButtons();
-                    }
-                    return;
-                }
-            }
-        }
+    private void paintIdCellSelection(Event e) {
+        if ((e.detail & SWT.SELECTED) == 0) return;
+        e.detail &= ~(SWT.SELECTED | SWT.FOCUSED | SWT.HOT);
+        if (e.index != 0) return;
+        var display = table.getDisplay();
+        var cell = ((TableItem) e.item).getBounds(0);
+        e.gc.setBackground(display.getSystemColor(SWT.COLOR_LIST_SELECTION));
+        e.gc.fillRectangle(cell.x, e.y, cell.width, e.height);
+        e.gc.setForeground(display.getSystemColor(SWT.COLOR_LIST_SELECTION_TEXT));
+        e.detail &= ~SWT.BACKGROUND;
     }
 
     private SessionStore.IndexEntry selected() {
