@@ -70,6 +70,25 @@ Anti-patterns: Aider's display-format-as-store (lossy re-parse); thousands of
 tiny JSON files without an index (OpenCode paid for a SQLite migration);
 AssistAI's index-less full-directory scan.
 
+**Mechanical history trimming — source survey (2026-10-27)**, input for §9.2.
+Read from source (not docs) at the listed commits:
+
+| Tool (commit) | Kept verbatim | Reduction | Cut unit |
+|---|---|---|---|
+| Codex CLI (`c587d6e`, `core/src/compact.rs`) | real user messages, newest first, ≤ 20k tokens | assistant/tool items dropped; one LLM summary; tool outputs head/tail 50/50 at record time | message |
+| Cline SDK "basic" (`c35b729`, `basic-compaction.ts`) | every typed user prompt; latest turn; older turns' final answer | dropped tool work replaced by a generated *files read / files edited / commands ran* notice | turn |
+| OpenCode (`dae4077`, `core/src/session/compaction.ts`) | 15k-token tail; newest exchange never omitted | 5 fidelity levels raised oldest-first, breadth-first: whole → outputs clipped (1000+1000 chars) → outputs removed → user only → omitted | exchange (user msg → next user msg) |
+| Gemini CLI (`363a131`, `agentHistoryProvider.ts`) | newest 40k tokens | per-message caps (old 2.5k / recent 12k tokens, head 25 % / tail 75 %); mechanical fallback note: last user intent + tool sequence | user-message boundary |
+| Kilo Code (`1180b80`, `kilocode/session/overflow.ts`) | last 2 turns within `min(15k, max(2k, usable × 0.25))` | old tool outputs → `[Old tool result content cleared]`, then LLM summary; fails if still too large | turn |
+| Roo Code (`b867ec9`, `context-management/index.ts`) | first message (task) | hides 50 % of visible messages per pass, tagged not deleted | message pair |
+| Aider (`5dc9490`, `aider/history.py`) | tail < 50 % of budget | LLM summary; **silently drops** overflow of the old part | user turn |
+
+All cut only at user-message/turn boundaries, never omit the newest exchange,
+and keep originals on disk. Token estimates: chars/4 (Codex, OpenCode, Kilo),
+chars/3 (Cline), Gemini 0.33 tokens per ASCII char and 1.5 per non-ASCII char.
+Anti-patterns: Aider's unmarked drops; Kilo's hard failure when compaction
+input still does not fit.
+
 ---
 
 ## Design
@@ -366,8 +385,9 @@ A's conversation at B.
   saved conversations and History lets users resume them.
 - History opens a session-list dialog for the current workspace store,
   ordered by `updatedAt` descending (most recently used first).
-- Each row shows the **title, bound project, and last-used time**, with a
-  distinct indicator for interrupted sessions. Sessions without a project
+- Each row shows the **session ID** (`ses_` + first 8 characters of the
+  session UUID, selectable for copying — see §9.2), **title, bound project, and
+  last-used time**, with a distinct indicator for interrupted sessions. Sessions without a project
   binding show "—" in the project column. Incompatible sessions remain
   listed with their status (§8).
 - Selecting a row does not restore it immediately. **Resume** explicitly
@@ -383,6 +403,111 @@ A's conversation at B.
   execution starts merely because a session was resumed.
 - Empty history displays a short explanation that conversations appear after
   the first message is sent. This UI initially covers DEV/PLAN only (§5).
+
+### 9.2. Continue by session ID
+
+Users want to continue a saved conversation in a **new** chat — most urgently
+when the old one failed with a context-overflow error, where Resume would
+restore the same oversized memory and fail again. Decided (user, 2026-10-27):
+the user types e.g. *"ses_a3f9c2d1 히스토리 이어서 작업해줘"* into a fresh chat and
+the model fetches that session through a tool.
+
+Principles: **no new buttons or menus**; **no program-side detection** of IDs
+in user input (the distinctive ID format plus the tool description are the only
+cue); **no LLM summarization** (a summary call over an oversized history can
+overflow itself and may invent facts); the source session is **read only**.
+
+**Session ID display form.** `ses_` + the first 8 characters of the session
+UUID, lowercase (`ses_a3f9c2d1`). Display only — directories stay UUIDs, no
+migration. The `ses_` prefix keeps it apart from git short hashes, and `_`
+keeps double-click selection whole. Shown in the History ID column (§9.1),
+which is where users pick it up.
+
+**Tool `readChatSession(sessionId, fromTurn?, toTurn?)`** — read-only, no user
+approval, registered only while persistence is on (also on a read-only store).
+Resolution: strip an optional `ses_` prefix (case-insensitive), ignore `-`,
+require ≥ 6 hex characters, prefix-match against index entries.
+
+| Result of the lookup | Tool returns |
+|---|---|
+| exactly one session | the session view (below) |
+| several sessions | candidate list (ID, title, last used) — the model asks the user |
+| none | the 10 most recent sessions (ID, title, last used) |
+| the current session | a notice that it is the active conversation |
+| deleted meanwhile / unreadable transcript | an error text; never an exception into the turn |
+
+The description tells the model to call it when the user references a
+`ses_…` ID to continue or consult an earlier conversation.
+
+**Source: the transcript (§3), not the checkpoint.** The transcript holds the
+complete user-visible history (pre-compaction and pre-clear included) with
+typed events; the checkpoint may hold only a compaction summary plus raw tool
+payloads. It is readable regardless of checkpoint compatibility (§8). THINK
+events and tool payloads are never included — they are what overflowed the
+context in the first place.
+
+**Session view** (in this order):
+
+```
+# ses_a3f9c2d1 — "<title>" (<mode> · <last used> · ⚠ interrupted)
+## Goal             first USER text, ≤ 2000 chars (head/tail clip)
+## Activity         Edited / Read / Commands — whole session, from TOOL_INTENT
+## ⚠ Interrupted    tools with unknown outcome + "verify on disk before redoing"
+## Earlier summary  text of the last COMPACTED event, if any
+## Conversation     turns T1..Tn, reduced per the levels below
+```
+
+- *Turn* = the events of one `turnId`, numbered by `TURN_STARTED` order;
+  events without a turn (`COMPACTED` from `compressContext()`, `CLEARED`) are
+  shown as one-line markers between turns.
+- *Activity* (Cline "basic" style) is mechanical: edit tools (`isEditTool()`)
+  → *Edited*, other file tools → *Read*, run/shell tools → *Commands*
+  (≤ 100 chars each); paths taken from the call arguments; each list capped at
+  30 entries plus "+N more".
+- The header is bounded to 40 % of the budget; if larger, the earlier
+  summary is head/tail clipped first, then the activity lists shortened.
+
+**Reduction levels** (OpenCode-style). While the view exceeds the budget,
+raise every turn except the newest, **oldest first and breadth-first** (all
+turns reach level *k* before any reaches *k+1*):
+
+| Level | What a turn keeps |
+|---|---|
+| L0 | user text + assistant text + one line per tool call (`→ writeFile(path)`) |
+| L1 | assistant text clipped to head 1000 + tail 1000 chars |
+| L2 | user text + one activity line (`→ edited: X · read: Y`); assistant text dropped (Codex/Cline: user prompts carry intent and decisions) |
+| L3 | user text only, clipped to head 1000 + tail 1000 chars |
+| L4 | omitted; consecutive omitted turns merge into one marker `[T2–T12 omitted — readChatSession("ses_a3f9c2d1", fromTurn=2, toTurn=12)]` |
+
+The newest turn is never omitted; if it alone exceeds the remaining budget,
+its assistant text and then its user text are head/tail clipped until it
+fits. The result therefore **always fits** — no failure mode. Clips use the
+visible marker `[… N characters omitted …]`; cuts happen only at turn
+boundaries.
+
+**Paging.** `fromTurn`/`toTurn` (1-based, inclusive) render only that range
+through the same levels, with a one-line title header instead of the full
+header.
+
+**Budget.** `B = clamp(autoCompactAfter × 0.25, 2 000, 15 000)` tokens
+(Kilo's tail budget; leaves ≥ 75 % for the new session's work); 8 000 when
+`autoCompactAfter` is unknown. Token estimate per character: ASCII 0.33,
+non-ASCII 1.5 (Gemini CLI) — chars/4 would badly undercount Korean text.
+Constants live in code, to be tuned against real overflowed sessions.
+
+**Effect on sessions.** The tool result enters the new session's memory like
+any tool result and is committed with it (§4); the source session is never
+written — the same outcome as Claude Code's fork. No lineage field is
+recorded. Afterwards the new session's normal compaction applies.
+
+**Thread safety.** The tool runs on the turn thread and only reads: the index
+and checkpoints are replaced atomically, the transcript is append-only with a
+torn-tail-tolerant reader (§3). A session deleted mid-read yields the error
+text. No locks are added.
+
+**Out of scope:** program-side ID detection, LLM summaries, merging several
+sessions, lineage display, any new button, and any added hint text in error
+messages (user decision 2026-10-27 — error messages stay unchanged).
 
 ### 10. Implementation order
 
@@ -402,6 +527,9 @@ A's conversation at B.
 5. Retention/size caps + preference page (base path with open-vs-migrate,
    disable toggle).
 6. Phase 2: AGENT / QUERY_TO_SOURCE aggregates.
+7. Continue by session ID (§9.2): core `SessionHistoryTool` with the view
+   builder and reduction levels as pure functions + unit tests; plugin tool
+   registration, History ID column.
 
 ### Verification scenarios
 
@@ -442,11 +570,25 @@ A's conversation at B.
   start recovers the turn as interrupted.
 - Retention run while an old session is being opened → protected; disk-full
   during commit → last good checkpoint intact, failure surfaced.
+- §9.2: `ses_a3f9c2d1`, `A3F9C2D1` and `a3f9c2` resolve to the same session; an
+  ambiguous prefix returns candidates; an unknown ID returns the 10 most
+  recent; the active session's own ID returns the notice.
+- §9.2: a session that failed with context overflow → the view fits the
+  budget, keeps Goal/Activity/newest turn, marks omitted ranges, and a new
+  chat continues from it; the source session's files are unchanged.
+- §9.2: reduction order — L1 is applied to all older turns before any L2;
+  the newest turn is never omitted; paging returns exactly the requested range.
+- §9.2: Korean-only transcript is budgeted with the non-ASCII estimate (no
+  overflow in the new session).
 
 ---
 
 ## Review history
 
+- 2026-10-27 — user-approved §9.2 *Continue by session ID*: `ses_` + 8-char
+  display ID, chat-driven continuation via `readChatSession`, no buttons, no
+  program-side detection, mechanical reduction grounded in a source survey of
+  Codex, Cline, OpenCode, Gemini CLI, Kilo, Roo and Aider (see Prior art).
 - 2026-10-13 — user-approved lifecycle and UI decisions: always start fresh
   after Eclipse restart or Peon AI view reopen; resume only from history;
   top-level New Session / History actions; recent-first session rows with
