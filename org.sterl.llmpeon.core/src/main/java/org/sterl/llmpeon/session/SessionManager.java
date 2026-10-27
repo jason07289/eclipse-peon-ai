@@ -1,9 +1,11 @@
 package org.sterl.llmpeon.session;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,6 +44,8 @@ public class SessionManager implements AutoCloseable {
 
     /** Per-session transcript detail cap (design §9); checkpoints keep working beyond it. */
     static final long TRANSCRIPT_MAX_BYTES = 50L * 1024 * 1024;
+    /** Covers a reopened view racing the previous view's background close (same JVM only). */
+    static final Duration STORE_LOCK_WAIT = Duration.ofSeconds(3);
 
     private final SessionStore store;
     private final SessionSource source;
@@ -62,7 +66,7 @@ public class SessionManager implements AutoCloseable {
     private SessionMeta meta;
 
     public SessionManager(Path baseDir, Path workspace, SessionSource source) {
-        this(SessionStore.open(baseDir, workspace), source);
+        this(SessionStore.open(baseDir, workspace, STORE_LOCK_WAIT), source);
     }
 
     SessionManager(SessionStore store, SessionSource source) {
@@ -78,11 +82,19 @@ public class SessionManager implements AutoCloseable {
         if (handler != null) this.onPersistenceError = handler;
     }
 
+    /** False when another instance holds the store lock: history is browsable, nothing is saved. */
+    public boolean isWritable() {
+        return store.isWritable();
+    }
+
     // ---- lifecycle ----
 
-    /** New empty in-memory session; nothing is created on disk (design: no empty sessions). */
+    /**
+     * New empty in-memory session; nothing is created on disk (design: no empty sessions).
+     * Never blocks: commits already queued still hold their own transcript reference, which is
+     * closed on the writer after them.
+     */
     public void startFresh() {
-        drain();
         synchronized (lock) {
             closeTranscript();
             dir = null;
@@ -96,7 +108,7 @@ public class SessionManager implements AutoCloseable {
      * aggregate's memories and mode — with no reset, no re-injection, no auto-run.
      */
     public Optional<SessionDirectory.LoadedSession> resume(String sessionId) {
-        drain();
+        drain(); // the session may be the one just left — its last commit must be on disk; NOT under lock
         synchronized (lock) {
             var session = store.openSession(sessionId);
             if (session.isEmpty()) return Optional.empty();
@@ -115,13 +127,16 @@ public class SessionManager implements AutoCloseable {
         }
     }
 
-    /** Deleting the active session first switches to a fresh one (design §9.1). */
-    public void deleteSession(String sessionId) {
+    /**
+     * Deleting the active session first switches to a fresh one (design §9.1). The delete itself
+     * runs on the writer — after any queued commit of that session and serialized with index
+     * updates — so the caller never blocks; the future completes (or fails) once it is gone.
+     */
+    public CompletableFuture<Void> deleteSession(String sessionId) {
         synchronized (lock) {
             if (dir != null && dir.sessionId().equals(sessionId)) startFresh();
         }
-        drain();
-        store.deleteSession(sessionId);
+        return CompletableFuture.runAsync(() -> store.deleteSession(sessionId), writer);
     }
 
     public java.util.List<SessionStore.IndexEntry> listSessions() {
@@ -172,10 +187,14 @@ public class SessionManager implements AutoCloseable {
 
     @Override
     public void close() {
-        drain();
-        writer.shutdown();
         synchronized (lock) {
-            closeTranscript();
+            closeTranscript(); // queued behind pending commits, so it must precede shutdown
+        }
+        writer.shutdown();
+        try {
+            if (!writer.awaitTermination(30, TimeUnit.SECONDS)) log.warn("Session writer did not finish in time");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
         store.close();
     }
@@ -197,6 +216,9 @@ public class SessionManager implements AutoCloseable {
         @Override
         public void turnStarted(String turnId, String userText) {
             synchronized (lock) {
+                // read-only store (another instance owns it): the chat runs, nothing is recorded —
+                // the UI already shows the state once instead of failing on every turn
+                if (dir == null && !store.isWritable()) return;
                 try {
                     if (dir == null) materialize(userText);
                     activeTurns.put(turnId, new TurnContext(dir, transcript, meta, generation.get()));
@@ -341,15 +363,18 @@ public class SessionManager implements AutoCloseable {
         });
     }
 
+    /** Closes on the writer, behind every queued commit that still flushes/appends to it. */
     private void closeTranscript() {
-        if (transcript != null) {
+        final var old = transcript;
+        transcript = null;
+        if (old == null) return;
+        writer.submit(() -> {
             try {
-                transcript.close();
+                old.close();
             } catch (RuntimeException e) {
                 log.warn("Failed to close transcript", e);
             }
-            transcript = null;
-        }
+        });
     }
 
     private static String abbreviate(String text) {

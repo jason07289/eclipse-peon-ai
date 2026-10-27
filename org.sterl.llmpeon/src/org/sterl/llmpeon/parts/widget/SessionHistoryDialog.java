@@ -4,7 +4,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.function.Consumer;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.jface.dialogs.Dialog;
@@ -26,7 +27,8 @@ import org.sterl.llmpeon.session.SessionStore;
  * Session history (chat-session design §9.1): recent-first rows with title, bound project and
  * last-used time. Selecting a row changes nothing — only the Resume button activates a session,
  * Delete removes one after confirmation, and dismissing the dialog leaves the current
- * conversation untouched.
+ * conversation untouched. In a read-only store (another instance holds the lock) rows can be
+ * resumed for reading but not deleted.
  */
 public class SessionHistoryDialog extends Dialog {
 
@@ -35,18 +37,24 @@ public class SessionHistoryDialog extends Dialog {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final Supplier<List<SessionStore.IndexEntry>> sessions;
-    private final Consumer<String> onDelete;
+    /** Runs the delete off the UI thread; the dialog refreshes when the future completes. */
+    private final Function<String, CompletableFuture<Void>> onDelete;
+    private final boolean readOnly;
 
     private Table table;
     private Label emptyHint;
     private String selectedSessionId;
+    /** UI thread only — true while a delete is still running on the session writer. */
+    private boolean deleting;
 
     public SessionHistoryDialog(Shell parentShell,
             Supplier<List<SessionStore.IndexEntry>> sessions,
-            Consumer<String> onDelete) {
+            Function<String, CompletableFuture<Void>> onDelete,
+            boolean readOnly) {
         super(parentShell);
         this.sessions = sessions;
         this.onDelete = onDelete;
+        this.readOnly = readOnly;
     }
 
     /** The session the user chose to resume, set only when the dialog ended with Resume. */
@@ -57,7 +65,7 @@ public class SessionHistoryDialog extends Dialog {
     @Override
     protected void configureShell(Shell newShell) {
         super.configureShell(newShell);
-        newShell.setText("Chat Sessions");
+        newShell.setText(readOnly ? "Chat Sessions (read-only)" : "Chat Sessions");
     }
 
     @Override
@@ -68,6 +76,13 @@ public class SessionHistoryDialog extends Dialog {
     @Override
     protected Control createDialogArea(Composite parent) {
         var area = (Composite) super.createDialogArea(parent);
+
+        if (readOnly) {
+            var hint = new Label(area, SWT.WRAP);
+            hint.setText("Another Eclipse instance is using this session store — new conversations are not"
+                    + " saved and sessions cannot be deleted here.");
+            hint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        }
 
         emptyHint = new Label(area, SWT.WRAP);
         emptyHint.setText("No saved conversations yet — a session appears here after its first message is sent.");
@@ -131,8 +146,8 @@ public class SessionHistoryDialog extends Dialog {
         var entry = selected();
         var resume = getButton(RESUME_ID);
         var delete = getButton(DELETE_ID);
-        if (resume != null) resume.setEnabled(entry != null && entry.compatible());
-        if (delete != null) delete.setEnabled(entry != null);
+        if (resume != null) resume.setEnabled(!deleting && entry != null && entry.compatible());
+        if (delete != null) delete.setEnabled(!deleting && !readOnly && entry != null);
     }
 
     @Override
@@ -152,14 +167,35 @@ public class SessionHistoryDialog extends Dialog {
             setReturnCode(OK);
             close();
         } else if (buttonId == DELETE_ID) {
-            if (entry == null) return;
+            if (entry == null || readOnly || deleting) return;
             if (MessageDialog.openConfirm(getShell(), "Delete session",
                     "Delete '" + entry.title() + "'? This cannot be undone.")) {
-                onDelete.accept(entry.id());
-                refresh();
+                startDelete(entry);
             }
         } else {
             super.buttonPressed(buttonId);
         }
+    }
+
+    private void startDelete(SessionStore.IndexEntry entry) {
+        deleting = true;
+        updateButtons();
+        var display = getShell().getDisplay();
+        CompletableFuture<Void> future;
+        try {
+            future = onDelete.apply(entry.id());
+        } catch (RuntimeException e) { // e.g. writer already shut down — still unlock the dialog
+            future = CompletableFuture.failedFuture(e);
+        }
+        future.whenComplete((ok, error) -> display.asyncExec(() -> {
+            if (table == null || table.isDisposed()) return; // dialog closed meanwhile
+            deleting = false;
+            if (error != null) {
+                var cause = error.getCause() != null ? error.getCause() : error;
+                MessageDialog.openError(getShell(), "Delete session",
+                        "'" + entry.title() + "' could not be deleted: " + cause.getMessage());
+            }
+            refresh();
+        }));
     }
 }

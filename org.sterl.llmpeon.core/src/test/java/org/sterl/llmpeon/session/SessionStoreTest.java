@@ -87,6 +87,26 @@ class SessionStoreTest {
     }
 
     @Test
+    void test_lockHeldInSameJvm_isAwaitedUntilReleased() throws Exception {
+        var first = SessionStore.open(base, workspace);
+        // a reopened chat view races the previous view's background close
+        var closer = new Thread(() -> {
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            first.close();
+        });
+        closer.start();
+
+        try (var second = SessionStore.open(base, workspace, java.time.Duration.ofSeconds(5))) {
+            assertThat(second.isWritable()).isTrue();
+        }
+        closer.join();
+    }
+
+    @Test
     void test_createListDelete_lifecycle() {
         try (var store = SessionStore.open(base, workspace)) {
             var s1 = store.createSession(meta("first"), aggregate());

@@ -323,19 +323,35 @@ public class PeonAiService implements MessageProvider, SessionSource {
         var tokens = checkpoint.meta().contextTokens();
         developerService.replaceMessages(aggregate.devMessages(), tokens);
         plannerService.replaceMessages(aggregate.planMessages(), tokens);
+        // safety net — the UI only offers resume in DEV/PLAN. Leaving AGENT must still detach its
+        // tools (savePlan/reportPlanProblems), which setPeonMode would do; the rest of the mode
+        // switch (overview re-injection, QUERY reset) stays skipped on purpose.
+        if (!isSessionMode()) {
+            getToolService().removeTool(getAgentModeTools());
+            getAgentMode().reset();
+        }
         this.mode = aggregate.activeMode() == PeonMode.PLAN ? PeonMode.PLAN : PeonMode.DEV;
         return loaded;
     }
 
-    /** Deleting the active session switches to a fresh one first (design §9.1). */
-    public void deleteSession(String sessionId) {
-        if (sessionManager == null) return;
+    /** True in the modes whose memories are session-managed (Phase 1: DEV and PLAN, design §5). */
+    public boolean isSessionMode() {
+        return mode == PeonMode.DEV || mode == PeonMode.PLAN;
+    }
+
+    /**
+     * Deleting the active session switches to a fresh one first (design §9.1) — synchronously,
+     * so the view can reset right away. The returned future tracks the removal on disk.
+     */
+    public java.util.concurrent.CompletableFuture<Void> deleteSession(String sessionId) {
+        if (sessionManager == null) return java.util.concurrent.CompletableFuture.completedFuture(null);
         boolean wasActive = sessionId.equals(sessionManager.currentSessionId());
-        sessionManager.deleteSession(sessionId);
+        var deleted = sessionManager.deleteSession(sessionId);
         if (wasActive) {
             developerService.replaceMessages(List.of(), 0);
             plannerService.replaceMessages(List.of(), 0);
         }
+        return deleted;
     }
 
     /** Verifies the restored session's project binding against the workspace (design §7). */

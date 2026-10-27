@@ -228,11 +228,30 @@ class SessionManagerTest {
         recorder.turnFinished("t1", SessionStatus.COMPLETED);
         var id = manager.currentSessionId();
 
-        manager.deleteSession(id);
-
+        var deleted = manager.deleteSession(id);
+        // the switch is synchronous; the file removal follows on the writer
         assertThat(manager.currentSessionId()).isNull();
+
+        deleted.join();
         assertThat(manager.listSessions()).isEmpty();
         assertThat(Files.exists(sessionsRoot().resolve(id))).isFalse();
+    }
+
+    @Test
+    void test_deleteOtherSession_keepsCurrentSession() {
+        var recorder = manager.recorder(PeonMode.DEV);
+        recorder.turnStarted("t1", "first");
+        recorder.turnFinished("t1", SessionStatus.COMPLETED);
+        var first = manager.currentSessionId();
+        manager.startFresh();
+        recorder.turnStarted("t2", "second");
+        recorder.turnFinished("t2", SessionStatus.COMPLETED);
+        var second = manager.currentSessionId();
+
+        manager.deleteSession(first).join();
+
+        assertThat(manager.currentSessionId()).isEqualTo(second);
+        assertThat(manager.listSessions()).extracting(SessionStore.IndexEntry::id).containsExactly(second);
     }
 
     @Test

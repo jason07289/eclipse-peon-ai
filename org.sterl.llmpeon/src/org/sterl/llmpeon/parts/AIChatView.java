@@ -129,6 +129,11 @@ public class AIChatView implements EclipseAiMonitor {
      */
     private final java.util.concurrent.atomic.AtomicLong uiGeneration = new java.util.concurrent.atomic.AtomicLong();
     private volatile long activeJobGeneration = -1;
+    /** Null when persistence is off. Disabled while a job runs — switching mid-turn would let the
+     *  running loop append its reply to the newly injected memory. */
+    private org.eclipse.swt.widgets.Button btnHistory;
+    /** One notice per session: a broken disk would otherwise repeat the same error every event. */
+    private final java.util.concurrent.atomic.AtomicBoolean persistenceErrorShown = new java.util.concurrent.atomic.AtomicBoolean();
 
     private volatile boolean recording = false;
 
@@ -209,11 +214,20 @@ public class AIChatView implements EclipseAiMonitor {
      * start via Clear (archive-style), so History is the only session action up here.
      */
     private void createSessionBar(Composite parent) {
-        if (aiService.getSessionManager() == null) return; // persistence off → no session UI
+        var manager = aiService.getSessionManager();
+        if (manager == null) return; // persistence off → no session UI
+        manager.setOnPersistenceError(this::onPersistenceError);
 
-        var btnHistory = new org.eclipse.swt.widgets.Button(parent, SWT.PUSH);
-        btnHistory.setText("🕘 History");
-        btnHistory.setToolTipText("Resume or delete saved conversations of this workspace — Clear starts a new one");
+        btnHistory = new org.eclipse.swt.widgets.Button(parent, SWT.PUSH);
+        if (manager.isWritable()) {
+            btnHistory.setText("🕘 History");
+            btnHistory.setToolTipText("Resume or delete saved conversations of this workspace (DEV/PLAN) — Clear starts a new one."
+                    + " Unavailable while a request is running.");
+        } else {
+            btnHistory.setText("🕘 History (read-only)");
+            btnHistory.setToolTipText("Another Eclipse instance is using this workspace's session store:"
+                    + " conversations here are NOT saved, and saved ones can be viewed but not deleted.");
+        }
         btnHistory.setLayoutData(new GridData(SWT.END, SWT.TOP, true, false));
         btnHistory.addListener(SWT.Selection, e -> onShowHistory());
     }
@@ -486,6 +500,12 @@ public class AIChatView implements EclipseAiMonitor {
         if (actionsBar.isWorking()) getIProgressMonitor().setCanceled(true);
         uiGeneration.incrementAndGet();
         aiService.startNewSession();
+        showEmptySession();
+    }
+
+    /** Resets the view to an empty conversation after the service already switched sessions. */
+    private void showEmptySession() {
+        persistenceErrorShown.set(false);
         chatHistory.clear();
         shownSurvey.set(null);
         keepFileChanges();
@@ -495,14 +515,26 @@ public class AIChatView implements EclipseAiMonitor {
 
     private void onShowHistory() {
         var manager = aiService.getSessionManager();
-        if (manager == null) return;
+        if (manager == null || actionsBar.isWorking()) return;
+        if (!aiService.isSessionMode()) {
+            // Phase 1: only DEV/PLAN are session-managed (design §5) — inform, never switch
+            MessageDialog.openInformation(parent.getShell(), "Chat Sessions",
+                    "Saved conversations can be resumed in DEV or PLAN mode only.\n"
+                    + "Switch to DEV or PLAN first, then open History again.");
+            return;
+        }
         var dialog = new SessionHistoryDialog(parent.getShell(),
                 manager::listSessions,
                 id -> {
-                    if (id.equals(manager.currentSessionId())) uiGeneration.incrementAndGet();
-                    aiService.deleteSession(id); // active one switches to a fresh session first
-                    EclipseUtil.runInUiThread(parent, () -> { chatHistory.clear(); refreshStatusLine(); });
-                });
+                    boolean wasActive = id.equals(manager.currentSessionId());
+                    if (wasActive) uiGeneration.incrementAndGet();
+                    // the active one switches to a fresh session synchronously; files go on the writer
+                    var deleted = aiService.deleteSession(id);
+                    // only the active session's view is affected — deleting another row keeps this chat
+                    if (wasActive) showEmptySession();
+                    return deleted;
+                },
+                !manager.isWritable());
         if (dialog.open() == org.eclipse.jface.window.Window.OK && dialog.getSelectedSessionId() != null) {
             resumeSession(dialog.getSelectedSessionId());
         }
@@ -510,8 +542,8 @@ public class AIChatView implements EclipseAiMonitor {
     }
 
     private void resumeSession(String sessionId) {
-        if (actionsBar.isWorking()) getIProgressMonitor().setCanceled(true);
-        uiGeneration.incrementAndGet();
+        uiGeneration.incrementAndGet(); // History is disabled while working, so no job can be running
+        persistenceErrorShown.set(false);
 
         var loaded = aiService.restoreSession(sessionId);
         if (loaded.isEmpty()) {
@@ -556,6 +588,21 @@ public class AIChatView implements EclipseAiMonitor {
                     "This session was bound to project '" + loaded.checkpoint().meta().projectName()
                     + "', which no longer exists in this workspace. Verify the selected project before running tools."));
         }
+    }
+
+    /**
+     * Session saving failed (any thread). The chat itself keeps working, so this is a notice, not
+     * an error dialog — shown once per session, details go to the error log.
+     */
+    private void onPersistenceError(Exception e) {
+        LOG.warn("Session persistence failed", e);
+        if (!persistenceErrorShown.compareAndSet(false, true)) return;
+        EclipseUtil.runInUiThread(parent, () -> {
+            if (chatHistory == null || chatHistory.isDisposed()) return;
+            chatHistory.appendMessage(new SimpleMessage(Type.PROBLEM,
+                    "Saving this conversation failed: " + e.getMessage()
+                    + " — it may not be resumable from History. Details are in the error log."));
+        });
     }
 
     /** History rendering: WAL/bookkeeping events are invisible, everything user-facing maps 1:1. */
@@ -1473,6 +1520,7 @@ public class AIChatView implements EclipseAiMonitor {
     private void lockWhileWorking(boolean value) {
         if (parent == null || parent.isDisposed()) return;
         actionsBar.lockWhileWorking(value);
+        if (btnHistory != null && !btnHistory.isDisposed()) btnHistory.setEnabled(!value);
         chatInput.setWorking(value);
         if (fileChangeReview != null && !fileChangeReview.isDisposed()) {
             fileChangeReview.setActionsEnabled(!value);

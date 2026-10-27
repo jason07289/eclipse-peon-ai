@@ -8,11 +8,13 @@ import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The per-workspace session store under {@code <base>/sessions/<wsName>-<hash16>/}.
@@ -31,6 +33,7 @@ public class SessionStore implements AutoCloseable {
     static final String LOCK_FILE = ".lock";
     static final String INDEX_JSON = "index.json";
     static final int HASH_LENGTH = 16;
+    private static final long LOCK_RETRY_MILLIS = 100;
 
     record StoreIdentity(String workspacePath, long createdAt) {}
 
@@ -57,6 +60,9 @@ public class SessionStore implements AutoCloseable {
     private final String workspacePath;
     private final FileChannel lockChannel;
     private final FileLock lock;
+    /** Serializes every read-modify-write of index.json — callers run on the session writer AND
+     *  on the turn thread (materialize), so the file alone would lose updates. */
+    private final ReentrantLock indexLock = new ReentrantLock();
 
     private SessionStore(Path root, String workspacePath, FileChannel lockChannel, FileLock lock) {
         this.root = root;
@@ -76,6 +82,15 @@ public class SessionStore implements AutoCloseable {
     }
 
     public static SessionStore open(Path baseDir, Path workspace) {
+        return open(baseDir, workspace, Duration.ZERO);
+    }
+
+    /**
+     * @param lockWait how long to retry when the lock is held <b>inside this JVM</b> — typically
+     *                 a previous chat view whose background close has not released it yet.
+     *                 A lock held by another process is never waited for (read-only at once).
+     */
+    public static SessionStore open(Path baseDir, Path workspace, Duration lockWait) {
         var normalized = normalize(workspace);
         var root = storeDirectory(baseDir, workspace);
         try {
@@ -90,8 +105,8 @@ public class SessionStore implements AutoCloseable {
         try {
             channel = FileChannel.open(root.resolve(LOCK_FILE),
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-            lock = channel.tryLock();
-        } catch (IOException | OverlappingFileLockException e) {
+            lock = tryLock(channel, lockWait);
+        } catch (IOException e) {
             // keep channel for cleanup; lock stays null → read-only
         }
         if (lock == null && channel != null) {
@@ -99,6 +114,23 @@ public class SessionStore implements AutoCloseable {
             channel = null;
         }
         return new SessionStore(root, normalized.toString(), channel, lock);
+    }
+
+    private static FileLock tryLock(FileChannel channel, Duration wait) throws IOException {
+        long deadline = System.nanoTime() + wait.toNanos();
+        while (true) {
+            try {
+                return channel.tryLock(); // null → another process holds it
+            } catch (OverlappingFileLockException e) {
+                if (System.nanoTime() >= deadline) return null;
+                try {
+                    Thread.sleep(LOCK_RETRY_MILLIS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+        }
     }
 
     private static void verifyOrWriteIdentity(Path root, String workspacePath) {
@@ -182,12 +214,15 @@ public class SessionStore implements AutoCloseable {
         requireWritable();
         var dir = root.resolve(sessionId);
         if (!Files.isDirectory(dir)) return;
+        indexLock.lock();
         try (var walk = Files.walk(dir)) {
             for (var p : walk.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(p);
+            writeIndex(new Index(listSessions().stream().filter(s -> !s.id().equals(sessionId)).toList()));
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to delete session " + sessionId, e);
+        } finally {
+            indexLock.unlock();
         }
-        writeIndex(new Index(listSessions().stream().filter(s -> !s.id().equals(sessionId)).toList()));
     }
 
     /** Recent-first listing from the index cache; rebuilt from checkpoints when missing or stale. */
@@ -218,7 +253,14 @@ public class SessionStore implements AutoCloseable {
             throw new UncheckedIOException("Failed to scan session store " + root, e);
         }
         var result = sorted(entries);
-        if (isWritable()) writeIndex(new Index(result));
+        if (isWritable()) {
+            indexLock.lock();
+            try {
+                writeIndex(new Index(result));
+            } finally {
+                indexLock.unlock();
+            }
+        }
         return result;
     }
 
@@ -228,10 +270,15 @@ public class SessionStore implements AutoCloseable {
         var loaded = session.load();
         if (loaded.isEmpty()) return;
         var entry = toEntry(loaded.get());
-        var entries = new ArrayList<>(listSessions().stream()
-                .filter(s -> !s.id().equals(entry.id())).toList());
-        entries.add(entry);
-        writeIndex(new Index(sorted(entries)));
+        indexLock.lock();
+        try {
+            var entries = new ArrayList<>(listSessions().stream()
+                    .filter(s -> !s.id().equals(entry.id())).toList());
+            entries.add(entry);
+            writeIndex(new Index(sorted(entries)));
+        } finally {
+            indexLock.unlock();
+        }
     }
 
     private static IndexEntry toEntry(SessionDirectory.LoadedSession loaded) {
@@ -256,6 +303,15 @@ public class SessionStore implements AutoCloseable {
      */
     public int applyRetention(RetentionPolicy policy, String protectedSessionId) {
         requireWritable();
+        indexLock.lock(); // reentrant: deleteSession/rebuildIndex below take it again
+        try {
+            return applyRetentionLocked(policy, protectedSessionId);
+        } finally {
+            indexLock.unlock();
+        }
+    }
+
+    private int applyRetentionLocked(RetentionPolicy policy, String protectedSessionId) {
         long now = System.currentTimeMillis();
         var entries = new ArrayList<>(rebuildIndex()); // newest first, accurate
         int deleted = 0;
